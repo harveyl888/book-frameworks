@@ -2,16 +2,12 @@ project:
   type: book
 
 book:
-  title: "R_and_Shiny_Frameworks"
-  author: "Norah Jones"
+  title: "R and Shiny Frameworks"
+  author: "Harvey Lieberman"
   date: "12/21/2023"
   chapters:
     - index.qmd
-    - intro.qmd
-    - summary.qmd
-    - references.qmd
-
-bibliography: references.bib
+    - importing_data.qmd
 
 format:
   html:

@@ -16,36 +16,30 @@ Our json input file will look like this:
 }
 ```
 
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list("dataset"="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
 This file contains just a single parameter, `dataset`, pointing to the URL of the dataset to read.  Our interpreter has a very simple purpose - read in the file and send the output to the console.  Our interpreter looks as follows:
 
-```r
-inp <- jsonlite::fromJSON("myfile.json", simplifyVector = FALSE)
+```{r}
+#| message: false
+#| eval: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 data <- readr::read_csv(inp$dataset)
 print(data)
 ```
 
 The output is:
-
-```
-# A tibble: 1,237 × 24
-   match_id   team1     team2 score_team1 score_team2 wickets_team1 wickets_team2 team1_away_or_home
-   <chr>      <chr>     <chr>       <dbl>       <dbl>         <dbl>         <dbl> <chr>             
- 1 ODI # 1028 West Ind… Aust…         172         173             9             9 away              
- 2 ODI # 1029 West Ind… Sri …         194         124            10            10 away              
- 3 ODI # 1030 Sri Lanka West…         102         104            10             3 away              
- 4 ODI # 1031 West Ind… Aust…         231         217            10            10 away              
- 5 ODI # 1032 Australia Sri …         213         214             5             7 home              
- 6 ODI # 1033 South Af… Engl…         211         205             8            10 home              
- 7 ODI # 1034 South Af… Engl…         262         265             8             5 home              
- 8 ODI # 1035 Australia Sri …         266         183             6             9 home              
- 9 ODI # 1036 England   Sout…         198         199             8             7 away              
-10 ODI # 1037 Sri Lanka West…         202         186            10             9 away              
-# ℹ 1,227 more rows
-# ℹ 16 more variables: team2_home_away <chr>, winner <chr>, margin <dbl>, margin_type <chr>,
-#   time_of_day <chr>, series <chr>, player_of_match <chr>, player_of_match_team <chr>,
-#   venue <chr>, toss <chr>, toss_decision <chr>, ball_remaining <chr>, ground <chr>,
-#   ground_city <chr>, ground_country <chr>, match_date <chr>
-# ℹ Use `print(n = ...)` to see more rows
+```{r}
+#| message: false
+#| eval: true
+#| echo: False
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- readr::read_csv(inp$dataset)
+print(data)
 ```
 
 We have one parameter in our json file, `dataset`.  Changing it will change the dataset imported and printed.  Of course, if we had written an R script we could simply change the filename in the script itself or change a variable pointing to the script but using an external instruction file allows us to change the parameter without affecting the script itself.  For example, if we want chocolate ratings instead of cricket statistics we simply change the dataset parameter:
@@ -56,26 +50,21 @@ We have one parameter in our json file, `dataset`.  Changing it will change the 
 }
 ```
 
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list("dataset"="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
 Using the same interpreter outputs the following:
 
-```
-A tibble: 2,530 × 10
-     ref company_manufacturer company_location review_date country_of_bean_origin
-   <dbl> <chr>                <chr>                  <dbl> <chr>                 
- 1  2454 5150                 U.S.A.                  2019 Tanzania              
- 2  2458 5150                 U.S.A.                  2019 Dominican Republic    
- 3  2454 5150                 U.S.A.                  2019 Madagascar            
- 4  2542 5150                 U.S.A.                  2021 Fiji                  
- 5  2546 5150                 U.S.A.                  2021 Venezuela             
- 6  2546 5150                 U.S.A.                  2021 Uganda                
- 7  2542 5150                 U.S.A.                  2021 India                 
- 8   797 A. Morin             France                  2012 Bolivia               
- 9   797 A. Morin             France                  2012 Peru                  
-10  1011 A. Morin             France                  2013 Panama                
-# ℹ 2,520 more rows
-# ℹ 5 more variables: specific_bean_origin_or_bar_name <chr>, cocoa_percent <chr>,
-#   ingredients <chr>, most_memorable_characteristics <chr>, rating <dbl>
-# ℹ Use `print(n = ...)` to see more rows
+```{r}
+#| eval: true
+#| echo: False
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- readr::read_csv(inp$dataset)
+print(data)
 ```
 
 Our interpreter (which is very simple) can be used to read in and display either dataset.  Later chapters will explore how we can use a single interpreter to perform data manipulation and graphing for a number of different data imports.
@@ -95,8 +84,15 @@ In the most simple approach we can add a parameter to specify the dataset type a
 }
 ```
 
-```r
-inp <- jsonlite::fromJSON("myfile.json", simplifyVector = FALSE)
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list("format"="csv", "dataset"="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 if (isTRUE(inp$format == "csv")) {
   data <- readr::read_csv(inp$dataset)
 } else if (isTRUE(inp$format == "sas")) {
@@ -108,14 +104,15 @@ print(data)
 ```
 
 We have introduced a conditional that responds to the `format` parameter using {readr} to import the data if `format` is *csv* and {haven} to import the data if `format` is *sas*.  We also include a step to catch the fall-through if `format` is neither *csv* or *sas*.  
-It is worth noting that `isTRUE` is used around the conditions.  This is because the input file may contain a record in which `format` has not been set.  In this case, once the json file is imported and converted to an R list, inp$format would be `NULL`.  and `inp$format == "csv"` equates to logical(0).  Wrapping the condition in `isTRUE` will still return a logical if part of the logical is NULL so if inp$format is `NULL`, `isTRUE(inp$format == "csv")` returns `FALSE`.
+It is worth noting that `isTRUE` is used around the conditions.  This is because the input file may contain a record in which `format` has not been set.  In this case, once the json file is imported and converted to an R list, `inp$format` would be `NULL`.  and `inp$format == "csv"` equates to logical(0).  Wrapping the condition in `isTRUE` will still return a logical if part of the logical is NULL so if `inp$format` is `NULL`, `isTRUE(inp$format == "csv")` returns `FALSE`.
 
-### Replacing if else clauses with case_when
+### The challenge of using dplyr::case_when()
 
-An alternative, and more succinct approach, is to use `case_when()` from {dplyr}:
+An alternative, and more succinct approach, would be to use `case_when()` from {dplyr}:
 
-```r
-inp <- jsonlite::fromJSON("myfile.json", simplifyVector = FALSE)
+```{r}
+#| eval: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 data <- dplyr::case_when(
   isTRUE(inp$format == "csv") ~ readr::read_csv(inp$dataset),
   isTRUE(inp$format == "sas") ~ haven::read_sas(inp$dataset),
@@ -124,17 +121,28 @@ data <- dplyr::case_when(
 print(data)
 ```
 
+Unfortunately, the code above results in an error as `case_when()` evaluates all right-hand side expressions prior to returning the output.  If the file is a CSV file, as is the case in this example, the expression `haven::read_sas(inp$dataset)` leads to an error and the `case_when()` expression fails.
+
 ### Deducing the file type from the file extension
 
 Since the file format can generally be deduced from the file extension, we could even drop the dependence on the `format` parameter and build the condition on the file extension:
 
-```r
-inp <- jsonlite::fromJSON("myfile.json", simplifyVector = FALSE)
-data <- dplyr::case_when(
-  isTRUE(tools::file_ext(inp$dataset) == "csv") ~ readr::read_csv(inp$dataset),
-  isTRUE(tools::file_ext(inp$format == "sas7bdat")) ~ haven::read_sas(inp$dataset),
-  TRUE ~ NULL
-)
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list("dataset"="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
+  data <- readr::read_csv(inp$dataset)
+} else if (isTRUE(tools::file_ext(inp$dataset) == "sas")) {
+  data <- haven::read_sas(inp$dataset)
+} else {
+  data <- NULL
+}
 print(data)
 ```
 
@@ -145,6 +153,4 @@ Thus, our instruction file could revert back to the shorter version in which the
   "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv"
 }
 ```
-
-All three of the above approaches output the chocolate.csv data, identifying the correct dataset format and importing the data accordingly.
 

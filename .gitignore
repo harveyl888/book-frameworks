@@ -1,3 +1,5 @@
 /.quarto/
 _book
+importing_data_cache/
 data/
+notes.md

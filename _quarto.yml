@@ -8,6 +8,7 @@ book:
   chapters:
     - index.qmd
     - importing_data.qmd
+    - data_wrangling.qmd
 
 format:
   html:

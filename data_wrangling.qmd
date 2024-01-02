@@ -1,0 +1,400 @@
+# Data Wrangling
+
+## Introduction
+
+Once imported, one or more data wrangling steps are often required to manipulate data into its required form and format.  This chapter illustrates how data wrangling can be performed using a instruction file using the {dplyr} library.  Of course, other approaches, such as using base R functions and {data.table} may also be applied and the concepts presented here will hold true.
+
+## Non-Standard Evaluation
+
+## Command Parsing {#sec-command-parsing}
+
+The simplest approach is to specify the data manipulation step and execute it by evaluating it as an expression.  The base R functions `eval` and `parse` or the {rlang} function `parse_expr` can be used for this purpose.  There are two cases illustrated below.  The first parses raw R code directly and the second parses a dplyr::filter() step.
+
+### Parsing of R Code
+
+In the example code below we define a `data_processing` step and evaluate it by parsing.
+
+```json
+{
+  "data_processing": "dplyr::filter(mtcars, mpg > 30)"
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(data_processing="dplyr::filter(mtcars, mpg > 30)"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r filename="base R eval and parse"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- eval(parse(text = inp$data_processing))
+print(data)
+```
+
+
+```{r filename="rlang parse_expr"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- rlang::eval_tidy(rlang::parse_expr(inp$data_processing))
+print(data)
+```
+
+### Parsing a dplyr::filter() Step
+
+In the example code below we define `filter_process`, a filter, as `mpg > 30` and evaluate it within a `dplyr::filter()` function.
+
+```json
+{
+  "filter_process": "mpg > 30"
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(filter_process="mpg > 30"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r filename="base R eval and parse"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, eval(parse(text = inp$filter_process)))
+print(data)
+```
+
+```{r filename="rlang parse_expr"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, !!rlang::parse_expr(inp$filter_process))
+print(data)
+```
+
+Note that when using the dplyr::filter() function we can take advantage of the `!!` operator and use injection to evaluate it.
+
+:::{.callout-warning}
+## Important
+Such approaches are simplistic to build but open to abuse.  Parsing raw commands through an interpreter can often lead to undesired effects and should be avoided where possible.  An alternative approach is to break down the data wrangling steps 
+:::
+
+## Filter Step
+
+A filter step can be broken down into its integral parts.  When considering filtering a data frame, a filter step consists of the name of the column to apply the filter to, the filter operator, and the filter condition.  When building a filter step for a framework approach we can use this logic to separate the components and recombine in the interpreter.  This enables us to have more control over the filter step itself (for example, it is simpler to include data validation), as well as having control over expression evaluation.
+
+### Filtering on a Single Value with a Named Operator
+
+As a simple example, we will filter mtcars for values where mpg>30.  Here we define three parameters: `col`, the name of the column we wish to filter, `operator`, the comparison operator and `value`, the condition.  
+In the first example below an expression is built using the {glue} package and then evaluated using `rlang::parse_expr()`.
+
+```json
+{
+  "col": "mpg",
+  "operator": ">",
+  "value": 30
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(col="mpg", operator=">", value=30), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r filename="rlang parse_expr"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+filter_expr <- glue::glue("{inp$col} {inp$operator} {inp$value}")
+data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+print(data)
+```
+
+The advantage of this method over the ones illustrated in @sec-command-parsing is that individual parameters can be checked for consistency prior to running the evaluation.  For example, we could update our interpreter as follows:
+
+```{r filename="rlang parse_expr"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (!inp$col %in% colnames(mtcars)) {
+  stop("inconsistent column name")
+}
+if (!inp$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+  stop("unknown operator")
+}
+if (!is.numeric(inp$value)) {
+  stop("value is not numeric")
+}
+filter_expr <- glue::glue("{inp$col} {inp$operator} {inp$value}")
+data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+print(data)
+```
+
+In this case, execution will stop if the json input attempts to filter on an unknown column, use an unknown operator or attempts to filter a value that is non-numeric, as demonstrated below:
+
+```json
+{
+  "col": "new_col_name",
+  "operator": ">",
+  "value": 30
+}
+```
+
+```{r}
+#| echo: false
+print("Error: inconsistent column name")
+```
+
+### Operator as an Expression
+
+In R, operators, such as `==`, `>`, `<`, etc are functions.
+
+```{r}
+`==`(3,4)
+`==`(4,4)
+```
+
+As a more programmatic approach, `match.fun()` or `call` may be used:
+
+```{r}
+operator <- "=="
+match.fun(operator)(3, 4)
+call(operator, 3, 4)
+```
+
+The filter step can be rewritten using the operator as a function.  The json file remains as follows:
+
+```json
+{
+  "col": "mpg",
+  "operator": ">",
+  "value": 30
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(col="mpg", operator=">", value=30), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+and the interpreter becomes:
+
+```{r filename="match.fun"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, match.fun(inp$operator)(!!rlang::sym(inp$col), inp$value))
+print(data)
+```
+
+```{r filename="call"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, !!call(inp$operator, rlang::sym(inp$col), inp$value))
+print(data)
+```
+
+### Filtering against a List of Values
+
+Once the logic for filtering against a single value has been determined it is simple to change it to work for multiple values.  In the example below the value has been replaced by an array of values and the operator is called `in`.
+
+
+```json
+{
+  "col": "cyl",
+  "operator": "in",
+  "value": [4, 5, 6]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(col="cyl", operator="in", value=list(4,5,6)), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+filter_expr <- glue::glue("{inp$col} %in% c({glue::glue_collapse(inp$value, sep=',')})")
+data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+print(data)
+```
+
+Alternatively, the expression can be built without using {glue}, using `%in%` directly:
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, !!rlang::sym(inp$col) %in% unlist(inp$value))
+print(data)
+```
+
+### Generic Case - Catering for Different Operators
+
+Up to now we've worked against a single type of known operator but the approach can be extended to work against any type of operator.  The interpreter below will work with common logical operators as well as the operator that we have defined as `in`:
+
+```{r}
+#| message: false
+#| eval: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (inp$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+  data <- dplyr::filter(mtcars, match.fun(inp$operator)(!!rlang::sym(inp$col), inp$value))
+} else if (inp$operator == "in") {
+  data <- dplyr::filter(mtcars, !!rlang::sym(inp$col) %in% unlist(inp$value))
+}
+print(data)
+```
+
+### Multiple Operators
+
+Filter steps can be combined using `AND` and `OR` logic to build more complex cases.
+
+#### Combining Filters using `AND`
+
+`AND` is a the default behavior when filters are combined.  The first filter is performed followed by the second and subsequent operators.  To demonstrate, we'll add two filter steps as follows:
+
+```json
+{
+  "filter_steps" : [
+    {
+      "col": "cyl",
+      "operator": "in",
+      "value": [4, 5, 6]
+    },
+    {
+      "col": "mpg",
+      "operator": ">",
+      "value": 30
+    }
+  ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator="in", value=list(4,5,6)), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- mtcars
+for (step in inp$filter_steps) {
+  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+    data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), step$value))
+  } else if (step$operator == "in") {
+    data <- data |> dplyr::filter(!!rlang::sym(step$col) %in% unlist(step$value))
+  }
+}
+print(data)
+```
+
+#### Combining Filters using `OR`
+
+`OR` is a little more challenging than `AND` since we cannot simply loop through the conditions and add them sequentially.  One way to work with `OR` logic is to build a single expression through concatenating conditions with the `|` operator and evaluating the resulting combination.  To demonstrate, we'll add two filter steps as follows:
+
+```json
+{
+  "filter_steps" : [
+    {
+      "col": "cyl",
+      "operator": "in",
+      "value": [4, 5, 6]
+    },
+    {
+      "col": "mpg",
+      "operator": ">",
+      "value": 30
+    }
+  ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator="in", value=list(4,5,6)), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+filter_expr <- lapply(inp$filter_steps, function(step) {
+  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+    glue::glue("{step$col}{step$operator}{step$value}")
+  } else if (step$operator == "in") {
+    glue::glue("{step$col} %in% c({glue::glue_collapse(step$value, sep=',')})")
+  }
+}) |> glue::glue_collapse(sep = " | ")
+data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+print(data)
+```
+
+### The Challenge of Values and Column Names
+
+It is important to note the difference between filtering against a value vs. filtering against another column.  For example, in R each of the following are valid:
+
+```{r}
+dplyr::filter(mtcars, wt > drat)
+dplyr::filter(mtcars, wt > 4)
+```
+
+However, when we use an interpreter to parse code built from an instruction file we might wish to use non-standard evaluation.  Unfortunately we cannot use a single approach for both column names and scalar values as `!!sym(column)` is valid but `!!sum(value)` is not.
+
+```{r}
+x1 <- 'wt'
+x2 <- 'drat'
+dplyr::filter(mtcars, !!rlang::sym(x1) > !!rlang::sym(x2))
+
+x1 <- 'wt'
+x2 <- 4
+# dplyr::filter(mtcars, !!rlang::sym(x1) > !!rlang::sym(x2))
+# Error in `rlang::sym()`:
+# ! Can't convert a double vector to a symbol.
+dplyr::filter(mtcars, !!rlang::sym(x1) > x2)
+```
+
+### Combining Data Import with a Filter Data Step
+
+Our interpreter can be expanded to import and process data.  Using concepts from @sec-importing-data, Our instruction file and interpreter can be extended as follows:
+
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv",
+  "columns": ["ref", "cocoa_percent", "rating"],
+  "filter_step:" {
+    "col": "cocoa_percent",
+    "operator": ">",
+    "value": 85
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv", columns=list("ref", "cocoa_percent", "rating"), filter_step=list(col="cocoa_percent", operator=">", value=85)), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: true
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+only_cols <- unlist(inp$columns)
+if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
+  data <- readr::read_csv(inp$dataset, col_select = only_cols)
+} else if (isTRUE(tools::file_ext(inp$dataset) == "sas")) {
+  data <- haven::read_sas(inp$dataset, col_select = only_cols)
+} else {
+  data <- NULL
+}
+if (!is.null(inp$filter_step)) {
+  if (inp$filter_step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+    data <- data |> dplyr::filter(match.fun(inp$filter_step$operator)(!!rlang::sym(inp$filter_step$col), inp$filter_step$value))
+  } else if (inp$filter_step$operator == "in") {
+    data <- data |> dplyr::filter(!!rlang::sym(inp$filter_step$col) %in% unlist(inp$filter_step$value))
+  }
+}
+print(data)
+```

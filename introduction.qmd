@@ -1,0 +1,7 @@
+# What is a Framework and Why Use One
+
+A framework, in this context, is code which interprets a series of human-readable instructions and perform tasks accordingly.  From a programming perspective we often consider a *programmer* (someone who builds code) and an *end-user* (someone who consumes the output).  With a framework we can consider a third type of user who sits between the two, the *subject-matter expert*, who has the domain knowledge needed to build outputs for the *end-user* but not the in-depth programming knowledge of the *programmer*.  Such a person could use a **framework**, built by the *programmer* to generate the necessary outputs for consumption by the *end-user*.
+
+The frameworks descibed here rely on two main compnents: a series of human-readble instructions, referred to as the **instruction set** and an engine that can interpret said instructions and respond accordingly, referred to as the **interpreter**.  A framework can include multiple interpreters and the choice of interpreter can be specified within the instruction set or deduced by its contents.
+
+Frameworks differ from a traditional R script in that the flow of control can be dictated by the instructions, not the underlying code.  If a change is needed it can be make in the instructions and the code does not change.  it also offers ease of extensibility - the ability to extend the framework by adding new functionality.  Finally, a framework approach supports thet concept of reusability as a single framweork may be built for multiple use-cases.

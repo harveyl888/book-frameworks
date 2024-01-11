@@ -398,3 +398,38 @@ if (!is.null(inp$filter_step)) {
 }
 print(data)
 ```
+
+## Mutate Step
+
+Building a mutate step is slightly different to a filter step and requires use of `:=` in place of `=`.  For example, in order to mimic the mutate step `dplyr::mutate(mtcars, my_new_column = 3)` we could use an instruction set and interpreter as follows:
+
+```json
+{
+  "new_col_name": "X",
+  "value": 3
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(new_col_name="X", value=3), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::mutate(mtcars, !!inp$new_col_name  := inp$value)
+print(data)
+```
+
+Mutate can also be used with a glue-like syntax to pass column names as parameters.  For example:
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::mutate(mtcars, "{inp$new_col_name}"  := inp$value)
+print(data)
+```
+
+Mutate steps can be complex, involving multiple columns and internal functions and it may be tempting to use a `parse()` and `eval()` approach.  Caution should be taken however as mutate is more prone to abuse than filter.  Whereas filter simply returns a reduced representation, mutate will change existing or create new columns.

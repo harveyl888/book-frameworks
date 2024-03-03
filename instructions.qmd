@@ -1,0 +1,166 @@
+# The Instruction Set
+
+The instruction set tells the interpreter what to do.  Once read, the interpreter then parses the instructions and responds accordingly.  The instruction set should be written in a human-readable form and be editable by hand or programmatically.  One of the best choices is to write instructions using the JSON format.  JSON (Javascript Object Notation) is a lightweight, language-independent, human-readable format for transferring data.  There exist several R libraries to import and convert between JSON and R list format (for the purpose of this book we will use {jsonlite} to convert between formats).
+
+## The JSON Format
+
+JSON objects are made up of key-value pairs separated by a colon surrounded by curly braces.  An example of a json object is shown below:
+
+```json
+{
+  "name": "Joe Bloggs",
+  "age": 25,
+  "family_member": true
+}
+```
+
+In the case above we have three key-value pairs separated by commas.  The first (*name*) returns a string, the second (*age*) returns a numeric and the third (*family_member*) returns a boolean.
+
+JSON objects may be nested, creating a hierarchy as follows:
+
+```json
+{
+  "name": "Joe Bloggs",
+  "age": 25,
+  "family_member": true,
+  "pets": {
+    "has_pets": true,
+    "number_pets": 3
+  }
+}
+```
+
+JSON also accepts arrays, enclosed in square braces:
+
+```json
+{
+  "name": "Joe Bloggs",
+  "age": 25,
+  "family_member": true,
+  "pets": {
+    "has_pets": true,
+    "number_pets": 3,
+    "pet_types": ["dog", "dog", "cat"]
+  }
+}
+```
+
+### Using the {jsonlite} Package
+
+{jsonlite} can quickly convert between JSON and R data types.  Generally, when using JSON as an instruction format for frameworks, we will be converting the JSON format into an R list.  A list provides several benefits when we wish to parse data through an interpreter.  
+
+-  A list can contain heterogeneous data types, hence the instruction set can built from different data types, such as strings, numbers and booleans.
+-  An item missing from a list will return `NULL` so it is easy to check for existence of a parameter in the interpreter.
+
+To convert the json string above to a list, simply use `jsonlite::fromJSON()` as follows:
+
+```{r}
+json_string <- '
+{
+  "name": "Joe Bloggs",
+  "age": 25,
+  "family_member": true,
+  "pets": {
+    "has_pets": true,
+    "number_pets": 3,
+    "pet_types": ["dog", "dog", "cat"]
+  }
+}
+'
+jsonlite::fromJSON(json_string, simplifyVector = FALSE)
+```
+
+The argument `simplifyVector =  TRUE` is included to stop simplification in which the JSON string could be converted into a more specific data type.  
+
+## Coding Instructions
+
+Our instruction set is designed to be both human-readable and computer interpretable.  With this in mind we can make some specific choices as to how an instruction set should be composed.  For example, importing a dataset could be as simple as the following:
+
+```json
+{
+  "import_file": "myfile.txt"
+}
+```
+
+It is the job of the interpreter to take this instruction, understand that we wish to import a file called `myfile.txt` and perform the correct commands to achieve the task.  Clearly we can get more complex with our instructions.  Consider importing a dataset and building a plot.   Here we could consider an instruction set that looks like:
+
+```json
+{
+  "file": {
+    "filename": "myfile.txt"
+  },
+  "plot": {
+    "type": "scatter",
+    "x": "x_data",
+    "y": "y_data"
+  }
+}
+```
+
+Here we specify a file, `myfile.txt`, and a scatterplot where `x_data` are plotted against `y_data`.  Once again, it is the job of the interpreter to understand that it needs to import and plot the data.  We could also craft two interpreters - one to import the data and one to build a plot.
+
+This approach is fine and it can be useful when you wish to change a parameter but not touch the code.  The real benefit, however, can be seen when the number of records is increased.  For example, the instruction set below uses a JSON array to hold two individual instruction sets, each identified by a reference number, `ref`:
+
+```json
+[
+  {
+    "ref": 1,
+    "file": {
+      "filename": "myfile1.txt"
+    },
+    "plot": {
+      "type": "scatter",
+      "x": "x_data",
+      "y": "y_data"
+    }
+  },
+  {
+    "ref": 2,
+    "file": {
+      "filename": "myfile2.txt"
+    },
+    "plot": {
+      "type": "scatter",
+      "x": "days",
+      "y": "counts"
+    }
+  }
+]
+```
+
+Reading this instruction set in R produces the following list:
+```{r}
+j <- '
+[
+  {
+    "ref": 1,
+    "file": {
+      "filename": "myfile1.txt"
+    },
+    "plot": {
+      "type": "scatter",
+      "x": "x_data",
+      "y": "y_data"
+    }
+  },
+  {
+    "ref": 2,
+    "file": {
+      "filename": "myfile2.txt"
+    },
+    "plot": {
+      "type": "scatter",
+      "x": "days",
+      "y": "counts"
+    }
+  }
+]'
+l_instructions <- jsonlite::fromJSON(j, simplifyVector = FALSE)
+print(l_instructions)
+```
+
+and individual records can be easily accessed using {purrr}
+
+```{r}
+l_instructions |> purrr::keep(\(x) x[["ref"]] == 2)
+```

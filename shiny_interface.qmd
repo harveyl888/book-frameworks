@@ -4,7 +4,48 @@
 
 In addition to working with data, a framework can be used to construct an interface in shiny.  The concept is much the same - define the interface through a series of instructions and use an engine to interpret and execute.
 
-## Simple Example
+## A Minimal Example - Interpreting a Single widget
+
+It's fairly straightforward to build a shiny widget programatically.  A traditional approach to including a widget, for example a `textInput` control, is:
+
+```r
+textInput(inputId = "my_textinput_id", label = "my_textinput_label")
+```
+
+From a programatic perspective, we can generate the textInput control using just an id and label.  Our instruction set can be as simple as the following:
+
+```json
+{
+  "id": "my_textinput_id",
+  "label": "my_textinput_label"
+}
+```
+
+and the interpreter could be:
+
+```{r}
+#| eval: false
+library(shiny)
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+server <- function(input, output, session) {
+  output$uiout <- renderUI({
+    textInput(inputId = inp$id, label = inp$label)
+  })    
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+![](images/shiny_interface_01.png)
+
+## Example - Buidling Multiple Widgets
 
 As a simple example, let's build a set of textInputs using the approach.  The instruction file would look something like:
 
@@ -17,6 +58,40 @@ As a simple example, let's build a set of textInputs using the approach.  The in
 ```
 
 This file contains three parameters, `widget`, is the type of widget you wish to build, `id_prefix` is a prefix used in defining the id, and `count` is the number of widgets to build.  Our interpreter is fairly simple - read in the file and build a series of inputs.  It looks as follows:
+
+```{r}
+#| eval: false
+library(shiny)
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+server <- function(input, output, session) {
+
+  output$uiout <- renderUI({
+    shiny_out <- lapply(seq(inp$count), function(i) {
+      if (inp$widget == "textInput") {
+        textInput(inputId = sprintf("%s_%02i", inp$id_prefix, i), label = sprintf("textInput %02i", i))
+      }
+    })
+
+    fluidRow(
+      tagList(shiny_out)
+    )
+    
+  })
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+![](images/shiny_interface_02.png)
+
+To build the same set in a single row the condition statement can be changed to read as follows:
 
 ```{r}
 #| eval: false
@@ -52,9 +127,71 @@ shinyApp(ui, server)
 
 ```
 
-![](images/shiny_interface_01.png)
+which leads to the following output:
 
-## Automatic Assignment of widgets
+![](images/shiny_interface_03.png)
+
+## A More Complex Design
+
+We can extend the approach further by specifying widget details in the instruction file.  This allows finer grain control on the properties of the widgets themselves.  For example, we can build the following instruction set:
+
+```json
+{
+  "interface": [
+    {
+      "type": "textInput",
+      "label": "my textInput"
+    },
+    {
+      "type": "selectizeInput",
+      "label": "my selectizeInput",
+      "choices": ["A", "B", "C"]
+    }
+  ]
+}
+
+```
+
+which can be interpreted:
+
+```{r}
+#| eval: false
+library(shiny)
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+server <- function(input, output, session) {
+  output$uiout <- renderUI({
+    shiny_out <- lapply(seq(length(inp$interface)), function(i) {
+      widget <- inp$interface[[i]]
+      if (widget$type == "textInput") {
+        textInput(inputId = sprintf("widget_%02i", i), label = widget$label, value = widget$value)
+      } else if (widget$type == "selectizeInput") {
+        selectizeInput(inputId = sprintf("widget_%02i", i), label = widget$label, choices = widget$choices)
+      }
+    })
+
+    fluidRow(
+      tagList(shiny_out)
+    )
+  })
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+leading to the following output:
+
+![](images/shiny_interface_04.png)
+
+There are a few things to unpack in the interpreter.  Firstly, it can accept an unlimited number of widgets and, if the logic is extended, any type.  Secondly, the choices for the selectize have been defined in the instruction set, illustrating how widgets can be built to specification using instruction parameters.  Thirdly, the logic for the textInput widget expects a default value which is not set in our instruction set.  Here we take advantage of the fact that {jsonlite} converts our json instructions into an R list.  Since `value` is missing in our instruction set, it evaluates to `NULL`.  This is the default for the `value` parameter in `textInput` and therefore no `value` is applied.  If it had been set in the instruction set, a value would have been applied to the textInput widget.
+
+## Automatic Assignment of Widgets
 
 Shiny has a number of widgets that can be used to input data within a shiny app.  They can be used to build an interface, identifying the most appropriate widget for the data.  For example, working with the `survivalists.csv` Alone data set from Tidy Tuesday:
 
@@ -156,6 +293,5 @@ In the logic above the following applies:
 -  If a column is character with 3 or less values, render as radioButtons.
 -  If a column is character with more than 10 values, render as a selectizeInput.
 
-![](images/shiny_interface_02.png)
-
+![](images/shiny_interface_05.png)
 

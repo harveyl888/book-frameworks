@@ -8,8 +8,10 @@ book:
   chapters:
     - index.qmd
     - introduction.qmd
+    - instructions.qmd
     - importing_data.qmd
     - data_wrangling.qmd
+    - shiny_interface.qmd
 
 format:
   html:

@@ -1,0 +1,161 @@
+# Building a Shiny Interface
+
+## Introduction
+
+In addition to working with data, a framework can be used to construct an interface in shiny.  The concept is much the same - define the interface through a series of instructions and use an engine to interpret and execute.
+
+## Simple Example
+
+As a simple example, let's build a set of textInputs using the approach.  The instruction file would look something like:
+
+```json
+{
+  "id_prefix": "mywidget",
+  "widget": "textInput",
+  "count": 5
+}
+```
+
+This file contains three parameters, `widget`, is the type of widget you wish to build, `id_prefix` is a prefix used in defining the id, and `count` is the number of widgets to build.  Our interpreter is fairly simple - read in the file and build a series of inputs.  It looks as follows:
+
+```{r}
+#| eval: false
+library(shiny)
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+server <- function(input, output, session) {
+
+  output$uiout <- renderUI({
+    col_width <- as.integer(12 / inp$count)
+    shiny_out <- lapply(seq(inp$count), function(i) {
+      if (inp$widget == "textInput") {
+        column(
+          textInput(inputId = sprintf("%s_%02i", inp$id_prefix, i), label = sprintf("textInput %02i", i)),
+          width = col_width
+        )
+      }
+    })
+
+    fluidRow(
+      tagList(shiny_out)
+    )
+    
+  })
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+![](images/shiny_interface_01.png)
+
+## Automatic Assignment of widgets
+
+Shiny has a number of widgets that can be used to input data within a shiny app.  They can be used to build an interface, identifying the most appropriate widget for the data.  For example, working with the `survivalists.csv` Alone data set from Tidy Tuesday:
+
+```{r}
+#| message: false
+#| warning: false
+f  <- "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv"
+data <- readr::read_csv(f)
+print(data)
+```
+
+In this case we'll write an instruction set to import a selected set of columns from the data (see @sec-importing-data) and automatically build a set of inputs for each column, based on the data imported.  The instructions are as follows:
+
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv",
+  "columns": ["season", "age", "gender", "country", "medically_evacuated", "profession"],
+  "build_widgets": true
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+The interpreter could look something like:
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: false
+inp <- list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE)
+
+only_cols <- unlist(inp$columns)
+data <- readr::read_csv(inp$dataset, col_select = only_cols)
+
+library(shiny)
+
+server <- function(input, output, session) {
+  
+  output$uiout <- renderUI({
+    
+    shiny_out <- lapply(seq(ncol(data)), function(i) {
+      col_class <- sapply(data, class)[i]
+      if (col_class == "logical") {
+        ## checkbox
+        checkboxInput(inputId = sprintf("Control_%02i", i), 
+                      label = names(data)[i])
+      } else if (col_class == "numeric") {
+        ## numericInput
+        if (length(unique(data[[i]])) > 10) {
+          sliderInput(inputId = sprintf("Control_%02i", i),
+                      label = names(data)[i],
+                      min = min(data[[i]]),
+                      max = max(data[[i]]),
+                      value = min(data[[i]]))
+        } else {
+          numericInput(inputId = sprintf("Control_%02i", i), 
+                       label = names(data)[i],
+                       min = min(data[[i]]),
+                       max = max(data[[i]]),
+                       value = min(data[[i]]))
+        }
+      } else if (col_class == "character") {
+        n_values <- length(unique(data[[i]]))
+        if (n_values <= 3) {
+          ## radiobuttons
+          radioButtons(inputId = sprintf("Control_%02i", i),
+                       label = names(data)[i],
+                       inline = TRUE,
+                       choices = sort(unique(data[[i]])))
+        } else {
+          ## selectizeInput
+          selectizeInput(inputId = sprintf("Control_%02i", i),
+                         label = names(data)[i],
+                         choices = sort(unique(data[[i]])))
+        }
+      } 
+    })
+    tagList(shiny_out)
+  })
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+In the logic above the following applies:
+
+-  If a column contain logical data, render as a checkbox.
+-  If a column is numeric with more than 10 values, render as a sliderInput.
+-  If a column is numeric with 10 or less values, render as a numericInput.
+-  If a column is character with 3 or less values, render as radioButtons.
+-  If a column is character with more than 10 values, render as a selectizeInput.
+
+![](images/shiny_interface_02.png)
+
+

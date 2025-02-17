@@ -354,6 +354,51 @@ x2 <- 4
 dplyr::filter(mtcars, !!rlang::sym(x1) > x2)
 ```
 
+A solution is to check if `value` is a column name and respond accordingly.  A simple example is shown below.  Bear in mind that the logic may need to be a little more complex than shown here.
+
+```json
+{
+  "filter_steps" : [
+    {
+      "col": "cyl",
+      "operator": ">",
+      "value": "drat"
+    },
+    {
+      "col": "wt",
+      "operator": ">",
+      "value": 4
+    }
+  ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator=">", value="drat"), list(col="wt", operator=">", value=4))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+data <- mtcars
+for (step in inp$filter_steps) {
+  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
+    if (step$value %in% names(data)) {
+      ## value is the name of a column
+      data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), !!rlang::sym(step$value)))
+    } else {
+      ## value is not the name of a column
+      data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), step$value))
+    }
+  } else if (step$operator == "in") {
+    data <- data |> dplyr::filter(!!rlang::sym(step$col) %in% unlist(step$value))
+  }
+}
+print(data)
+```
+
+
 ### Combining Data Import with a Filter Data Step
 
 Our interpreter can be expanded to import and process data.  Using concepts from @sec-importing-data, Our instruction file and interpreter can be extended as follows:

@@ -478,3 +478,127 @@ print(data)
 ```
 
 Mutate steps can be complex, involving multiple columns and internal functions and it may be tempting to use a `parse()` and `eval()` approach.  Caution should be taken however as mutate is more prone to abuse than filter.  Whereas filter simply returns a reduced representation, mutate will change existing or create new columns.
+
+### Mutate With Existing Columns
+
+...
+
+### Combining Data Import with a Mutate Step
+
+...
+
+## Arrange Step
+
+`dplyr::arrange()` sorts columns in ascending or descending order.  It is a little more challenging to build a generic arrange step for two reasons: 
+
+  - All components must be included in a single `arrange()` function call and cannot be built up stepwise, unlike other dplyr functions, such as `filter()`.  In a stepwise manner, the first `arrange()` function call will be discarded for the second, the second for the third and so on.  Only the last `arrange()` function call would be honored.
+  - The use of the `desc()` function must be encoded in the process.  Since the `arrange()` step is not built up stepwise, use of `desc()` becomes a little more challenging.
+
+The instruction set and interpreter below illustrates how an arrange step, with multiple columns, can be built.
+
+```json
+[
+  {
+    "column": "gear",
+    "direction": "asc"
+  },
+  {
+    "column": "cyl",
+    "direction": "desc"
+  },
+  {
+    "column": "mpg"
+  }
+]
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(list(column = "gear", direction = "asc"), list(column = "cyl", direction = "desc"), list(column = "mpg")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+arrange_content <- purrr::map(inp, \(x) {
+  if (isTRUE(x[['direction']] == "desc")) {
+    rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+  } else { 
+    rlang::sym(x[['column']])
+  }
+})
+data <- dplyr::arrange(mtcars, !!!arrange_content)
+print(data)
+```
+
+
+So let's look at what is happening in the code above.  We run `purrr::map()` over each of the arrange parameters.  Inside the `map()` function we check to direction - *ascending* or *descending* with the default being *ascending*.  
+For *ascending* columns the column name is converted to a symbol and returned.  
+For *descending* columns, the column name is converted to a symbol and `rlang::call2()` is used to retun a function call to `dplyr::desc()` without executing the call.  
+The list returned by `purrr::map()` is then injected into `arrange()` using `!!!` which is the list equivalent of `!!`.
+
+The result of `arrange_content` is:
+
+```{r}
+#| echo: false
+arrange_content
+```
+
+
+### Combining Data Import with an Arrange Step
+
+Using concepts from @sec-importing-data, Our instruction file and interpreter can be extended to include an arrange step as follows:
+
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv",
+  "columns": ["match_id", "score_team1", "score_team2", "wickets_team", "wickets_team2"],
+  "arrange_step:" [
+    {
+      "column": "wickets_team1"
+    },
+    {
+      "column": "wickets_team2"
+    },
+    {
+      "column": "score_team1",
+      "direction": "desc"
+    }
+  ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv", columns=list("match_id", "score_team1", "score_team2", "wickets_team1", "wickets_team2"), arrange_step=list(list(column = "wickets_team1"), list(column = "wickets_team2"), list(column = "score_team1", direction = "desc"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: true
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+only_cols <- unlist(inp$columns)
+if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
+  data <- readr::read_csv(inp$dataset, col_select = only_cols)
+} else if (isTRUE(tools::file_ext(inp$dataset) == "sas")) {
+  data <- haven::read_sas(inp$dataset, col_select = only_cols)
+} else {
+  data <- NULL
+}
+
+if (!is.null(inp$arrange_step)) {
+  arrange_content <- purrr::map(inp$arrange_step, \(x) {
+    if (isTRUE(x[['direction']] == "desc")) {
+      rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+    } else { 
+      rlang::sym(x[['column']])
+    }
+  })
+  data <- dplyr::arrange(data, !!!arrange_content)
+}
+print(data)
+```

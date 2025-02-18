@@ -12,6 +12,7 @@ book:
     - importing_data.qmd
     - data_wrangling.qmd
     - shiny_interface.qmd
+    - shiny_reactivity.qmd
 
 format:
   html:

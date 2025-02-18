@@ -1,0 +1,110 @@
+# Automating Shiny Reactivity
+
+A minimal amount of shiny reactivity can be introduced in an automated fashion.  For extensive shiny reactivity the author is encouraged to consider shiny modules, covered in a later chapter.
+
+## Adding Reactivity - Multiple observeEvents
+
+In this example, we'll build a series of actionButtons and assign a shiny observe/bindEvent function to each.  The observe function responds to a button press, updating a reactiveValue.  It's important to note that in the code below we generate five observe functions programatically.
+
+```{r}
+#| eval: false
+server <- function(input, output, session) {
+  
+  rv <- reactiveValues(
+    click = ""
+  )
+  
+  output$uiout <- renderUI({
+    lapply(seq(5), function(i) {
+      observe({
+        rv$click <- paste0("Button ", i, " clicked")
+      }) |>
+        bindEvent(input[[paste0("but_", i)]], ignoreInit = TRUE)
+    })
+    
+    tagList(
+      lapply(seq(5), function(i) {
+        actionButton(inputId = paste0("but_", i), label = paste0("Button ", i))
+      })
+    )
+  })
+  
+  output$txt <- renderPrint(
+    print(rv$click)
+  )
+  
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+  verbatimTextOutput("txt")
+)
+
+shinyApp(ui, server)
+```
+
+The resulting app contains five actionButtons, each linked to an observeEvent.
+
+![](images/shiny_reactivity_01.png)
+
+The reactive graph illustrates the five observeEvent functions created programatically.
+
+![](images/shiny_reactivity_02.png)
+
+Although effective, this is not a very efficient way of programming.  The next section will ilustrate how to achieve the same effect with a single observe/bindEvent function.
+
+## Adding Reactivity - Single observeEvent
+
+In this example, we'll build the same series of actionButtons but this time assign a single shiny observe function to all of them.  As before, the observe/bindEvent responds to a button press, updating a reactiveValue.  Here we use the `Shiny.setInputValue` javascript function to set the value of a shiny input variable.  The addition of `{priority: "event"}` will ensure that the shiny variable is updated on every button click, even if the same button is clicked two times in succession.
+
+```{r}
+#| eval: false
+server <- function(input, output, session) {
+  
+  rv <- reactiveValues(
+    click = ""
+  )
+  
+  output$uiout <- renderUI({
+    
+    observe({
+      rv$click <- paste0("Button ", input$button_click, " clicked")
+    }) |>
+      bindEvent(input$button_click, ignoreInit = TRUE)
+    
+    tagList(
+      lapply(seq(5), function(i) {
+        actionButton(inputId = paste0("but_", i),
+                     label = paste0("Button ", i),
+                     onclick=paste0('Shiny.setInputValue("button_click", ', i, ', {priority: "event"})'))
+      })
+    )
+  })
+  
+  output$txt <- renderPrint(
+    print(rv$click)
+  )
+  
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+  verbatimTextOutput("txt")
+)
+
+shinyApp(ui, server)
+```
+
+The resulting app contains five actionButtons, each linked to an observeEvent.
+
+![](images/shiny_reactivity_03.png)
+
+The reactive graph illustrates the simpler reactivity.
+
+![](images/shiny_reactivity_04.png)
+
+Here, it should be noted, that we have added an onclick event to each actionButton to trigger an observeEvent.  When an actionButton is clicked the shiny reactive `input$button_click` is updated to the index of the button. 
+
+## Applied Using an Instruction set
+
+

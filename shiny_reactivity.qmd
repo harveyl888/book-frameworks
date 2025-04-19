@@ -107,4 +107,19 @@ Here, it should be noted, that we have added an onclick event to each actionButt
 
 ## Applied Using an Instruction set
 
+We can build the reactivity shown above with an instruction set in more than one way.  The simplest approach assumes that all functionality is already included in the code.  For example, following on from the example in @sec-interface-assignment-widgets, which uses the `survivalists.csv` Alone data set from Tidy Tuesday: 
 
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv",
+  "columns": ["season", "age", "gender", "country", "medically_evacuated", "profession"],
+  "build_widgets": true,
+  "widget_reactivtiy": ["season", "age"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age")), 'data/myfile.json', auto_unbox = TRUE)
+```

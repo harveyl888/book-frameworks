@@ -191,7 +191,7 @@ leading to the following output:
 
 There are a few things to unpack in the interpreter.  Firstly, it can accept an unlimited number of widgets and, if the logic is extended, any type.  Secondly, the choices for the selectize have been defined in the instruction set, illustrating how widgets can be built to specification using instruction parameters.  Thirdly, the logic for the textInput widget expects a default value which is not set in our instruction set.  Here we take advantage of the fact that {jsonlite} converts our json instructions into an R list.  Since `value` is missing in our instruction set, it evaluates to `NULL`.  This is the default for the `value` parameter in `textInput` and therefore no `value` is applied.  If it had been set in the instruction set, a value would have been applied to the textInput widget.
 
-## Automatic Assignment of Widgets
+## Automatic Assignment of Widgets {#sec-interface-assignment-widgets}
 
 Shiny has a number of widgets that can be used to input data within a shiny app.  They can be used to build an interface, identifying the most appropriate widget for the data.  For example, working with the `survivalists.csv` Alone data set from Tidy Tuesday:
 

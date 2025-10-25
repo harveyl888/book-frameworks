@@ -6,7 +6,7 @@ Importing data is a fundemental step for a data processing framework.  It's also
 
 ## A Simple Example
 
-We will start with a simple example.  Our interpreter will simply read in data and print it to the console.  For the data we'll use the cricket dataset from TidyTuesday.
+We will start with a simple example.  Our engine will simply read in data and print it to the console.  For the data we'll use the cricket dataset from TidyTuesday.
 
 Our json input file will look like this:
 
@@ -22,7 +22,7 @@ Our json input file will look like this:
 jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv"), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-This file contains just a single parameter, `dataset`, pointing to the URL of the dataset to read.  Our interpreter has a very simple purpose - read in the file and send the output to the console.  Our interpreter looks as follows:
+This file contains just a single parameter, `dataset`, pointing to the URL of the dataset to read.  Our engine has a very simple purpose - read in the file and send the output to the console.  Our engine looks as follows:
 
 ```{r}
 #| message: false
@@ -42,7 +42,7 @@ data <- readr::read_csv(inp$dataset)
 print(data)
 ```
 
-We have one parameter in our json file, `dataset`.  Changing it will change the dataset imported and printed.  Of course, if we had written an R script we could simply change the filename in the script itself or change a variable pointing to the script but using an external instruction file allows us to change the parameter without affecting the script itself.  For example, if we want chocolate ratings instead of cricket statistics we simply change the dataset parameter:
+We have one parameter in our json file, `dataset`.  Changing it will change the dataset imported and printed.  Of course, if we had written an R script we could simply change the filename in the script itself or change a variable pointing to the script but using an external instruction set allows us to change the parameter without affecting the script itself.  For example, if we want chocolate ratings instead of cricket statistics we simply change the dataset parameter:
 
 ```json
 {
@@ -56,7 +56,7 @@ We have one parameter in our json file, `dataset`.  Changing it will change the 
 jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv"), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-Using the same interpreter outputs the following:
+Using the same engine outputs the following:
 
 ```{r}
 #| eval: true
@@ -67,15 +67,15 @@ data <- readr::read_csv(inp$dataset)
 print(data)
 ```
 
-Our interpreter (which is very simple) can be used to read in and display either dataset.  Later chapters will explore how we can use a single interpreter to perform data manipulation and graphing for a number of different data imports.
+Our engine (which is very simple) can be used to read in and display either dataset.  Later chapters will explore how we can use a single engine to perform data manipulation and graphing for a number of different data imports.
 
 ## Importing Different Data Formats
 
-By introducing a conditional, an interpreter can import different data types.  
+By introducing a conditional, an engine can import different data types.  
 
 ### Introducing a parameter to specify the file type
 
-In the most simple approach we can add a parameter to specify the dataset type and then respond accordingly.  For example adding a `format` parameter to our instruction file and responding to its value:
+In the most simple approach we can add a parameter to specify the dataset type and then respond accordingly.  For example adding a `format` parameter to our instruction set and responding to its value:
 
 ```json
 {
@@ -147,7 +147,7 @@ if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
 print(data)
 ```
 
-Thus, our instruction file could revert back to the shorter version in which the file type is not specified:
+Thus, our instruction set could revert back to the shorter version in which the file type is not specified:
 
 ```json
 {
@@ -290,7 +290,7 @@ Wide format relative timing: fread: 1, read_csv: `r signif(as.numeric(out_select
 -  There is little advantage when selecting columns for `data.table::fread` but when selected with `readr::read_csv` there is a significant increase in speed (`r signif(as.numeric(out_read_all[[1]]$min[2])/as.numeric(out_select[[1]]$min[2]), 3)`x for long data and `r signif(as.numeric(out_read_all[[2]]$min[2])/as.numeric(out_select[[2]]$min[2]), 3)`x for wide data)
 :::
 
-This knowledge can be carried over to our interpreter.  For example, the interpreter code could be updated as follows so that only necessary columns are imported:
+This knowledge can be carried over to our engine.  For example, the engine code could be updated as follows so that only necessary columns are imported:
 
 ```{r}
 #| message: false
@@ -307,7 +307,7 @@ if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
 print(data)
 ```
 
-and our instruction file should be updated as follows:
+and our instruction set should be updated as follows:
 
 ```json
 {

@@ -1,6 +1,6 @@
 # The Instruction Set
 
-The instruction set tells the interpreter what to do.  Once read, the interpreter then parses the instructions and responds accordingly.  The instruction set should be written in a human-readable form and be editable by hand or programmatically.  One of the best choices is to write instructions using the JSON format.  JSON (Javascript Object Notation) is a lightweight, language-independent, human-readable format for transferring data.  There exist several R libraries to import and convert between JSON and R list format (for the purpose of this book we will use {jsonlite} to convert between formats).
+The instruction set tells the engine what to do.  Once read, the engine then parses the instructions and responds accordingly.  The instruction set should be written in a human-readable form and be editable by hand or programmatically.  One of the best choices is to write instructions using the JSON format.  JSON (Javascript Object Notation) is a lightweight, language-independent, human-readable format for transferring data.  There exist several R libraries to import and convert between JSON and R list format (for the purpose of this book we will use {jsonlite} to convert between formats).
 
 ## The JSON Format
 
@@ -47,10 +47,10 @@ JSON also accepts arrays, enclosed in square braces:
 
 ### Using the {jsonlite} Package
 
-{jsonlite} can quickly convert between JSON and R data types.  Generally, when using JSON as an instruction format for frameworks, we will be converting the JSON format into an R list.  A list provides several benefits when we wish to parse data through an interpreter.  
+{jsonlite} can quickly convert between JSON and R data types.  Generally, when using JSON as an instruction format for frameworks, we will be converting the JSON format into an R list.  A list provides several benefits when we wish to parse data through an engine.  
 
 -  A list can contain heterogeneous data types, hence the instruction set can built from different data types, such as strings, numbers and booleans.
--  An item missing from a list will return `NULL` so it is easy to check for existence of a parameter in the interpreter.
+-  An item missing from a list will return `NULL` so it is easy to check for existence of a parameter in the engine.
 
 To convert the json string above to a list, simply use `jsonlite::fromJSON()` as follows:
 
@@ -82,7 +82,7 @@ Our instruction set is designed to be both human-readable and computer interpret
 }
 ```
 
-It is the job of the interpreter to take this instruction, understand that we wish to import a file called `myfile.txt` and perform the correct commands to achieve the task.  Clearly we can get more complex with our instructions.  Consider importing a dataset and building a plot.   Here we could consider an instruction set that looks like:
+It is the job of the engine to take this instruction, understand that we wish to import a file called `myfile.txt` and perform the correct commands to achieve the task.  Clearly we can get more complex with our instructions.  Consider importing a dataset and building a plot.   Here we could consider an instruction set that looks like:
 
 ```json
 {
@@ -97,7 +97,7 @@ It is the job of the interpreter to take this instruction, understand that we wi
 }
 ```
 
-Here we specify a file, `myfile.txt`, and a scatterplot where `x_data` are plotted against `y_data`.  Once again, it is the job of the interpreter to understand that it needs to import and plot the data.  We could also craft two interpreters - one to import the data and one to build a plot.
+Here we specify a file, `myfile.txt`, and a scatterplot where `x_data` are plotted against `y_data`.  Once again, it is the job of the engine to understand that it needs to import and plot the data.  We could also craft two engines - one to import the data and one to build a plot.
 
 This approach is fine and it can be useful when you wish to change a parameter but not touch the code.  The real benefit, however, can be seen when the number of records is increased.  For example, the instruction set below uses a JSON array to hold two individual instruction sets, each identified by a reference number, `ref`:
 

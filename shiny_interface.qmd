@@ -21,7 +21,7 @@ From a programatic perspective, we can generate the textInput control using just
 }
 ```
 
-and the interpreter could be:
+and the engine could be:
 
 ```{r}
 #| eval: false
@@ -47,7 +47,7 @@ shinyApp(ui, server)
 
 ## Example - Buidling Multiple Widgets
 
-As a simple example, let's build a set of textInputs using the approach.  The instruction file would look something like:
+As a simple example, let's build a set of textInputs using the approach.  The instruction set would look something like:
 
 ```json
 {
@@ -57,7 +57,7 @@ As a simple example, let's build a set of textInputs using the approach.  The in
 }
 ```
 
-This file contains three parameters, `widget`, is the type of widget you wish to build, `id_prefix` is a prefix used in defining the id, and `count` is the number of widgets to build.  Our interpreter is fairly simple - read in the file and build a series of inputs.  It looks as follows:
+This file contains three parameters, `widget`, is the type of widget you wish to build, `id_prefix` is a prefix used in defining the id, and `count` is the number of widgets to build.  Our engine is fairly simple - read in the file and build a series of inputs.  It looks as follows:
 
 ```{r}
 #| eval: false
@@ -133,7 +133,7 @@ which leads to the following output:
 
 ## A More Complex Design
 
-We can extend the approach further by specifying widget details in the instruction file.  This allows finer grain control on the properties of the widgets themselves.  For example, we can build the following instruction set:
+We can extend the approach further by specifying widget details in the instruction set.  This allows finer grain control on the properties of the widgets themselves.  For example, we can build the following instruction set:
 
 ```json
 {
@@ -189,7 +189,7 @@ leading to the following output:
 
 ![](images/shiny_interface_04.png)
 
-There are a few things to unpack in the interpreter.  Firstly, it can accept an unlimited number of widgets and, if the logic is extended, any type.  Secondly, the choices for the selectize have been defined in the instruction set, illustrating how widgets can be built to specification using instruction parameters.  Thirdly, the logic for the textInput widget expects a default value which is not set in our instruction set.  Here we take advantage of the fact that {jsonlite} converts our json instructions into an R list.  Since `value` is missing in our instruction set, it evaluates to `NULL`.  This is the default for the `value` parameter in `textInput` and therefore no `value` is applied.  If it had been set in the instruction set, a value would have been applied to the textInput widget.
+There are a few things to unpack in the engine.  Firstly, it can accept an unlimited number of widgets and, if the logic is extended, any type.  Secondly, the choices for the selectize have been defined in the instruction set, illustrating how widgets can be built to specification using instruction parameters.  Thirdly, the logic for the textInput widget expects a default value which is not set in our instruction set.  Here we take advantage of the fact that {jsonlite} converts our json instructions into an R list.  Since `value` is missing in our instruction set, it evaluates to `NULL`.  This is the default for the `value` parameter in `textInput` and therefore no `value` is applied.  If it had been set in the instruction set, a value would have been applied to the textInput widget.
 
 ## Automatic Assignment of Widgets {#sec-interface-assignment-widgets}
 
@@ -219,7 +219,7 @@ In this case we'll write an instruction set to import a selected set of columns 
 jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-The interpreter could look something like:
+The engine could look something like:
 
 ```{r}
 #| message: false

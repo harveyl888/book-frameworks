@@ -125,7 +125,7 @@ jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatasci
 ```
 
 
-The interpreter could look something like:
+The engine could look something like:
 
 ```{r}
 #| message: false

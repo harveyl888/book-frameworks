@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Once imported, one or more data wrangling steps are often required to manipulate data into its required form and format.  This chapter illustrates how data wrangling can be performed using a instruction file using the {dplyr} library.  Of course, other approaches, such as using base R functions and {data.table} may also be applied and the concepts presented here will hold true.
+Once imported, one or more data wrangling steps are often required to manipulate data into its required form and format.  This chapter illustrates how data wrangling can be performed using a instruction set using the {dplyr} library.  Of course, other approaches, such as using base R functions and {data.table} may also be applied and the concepts presented here will hold true.
 
 ## Non-Standard Evaluation
 
@@ -75,12 +75,12 @@ Note that when using the dplyr::filter() function we can take advantage of the `
 
 :::{.callout-warning}
 ## Important
-Such approaches are simplistic to build but open to abuse.  Parsing raw commands through an interpreter can often lead to undesired effects and should be avoided where possible.  An alternative approach is to break down the data wrangling steps 
+Such approaches are simplistic to build but open to abuse.  Parsing raw commands through an engine can often lead to undesired effects and should be avoided where possible.  An alternative approach is to break down the data wrangling steps 
 :::
 
 ## Filter Step
 
-A filter step can be broken down into its integral parts.  When considering filtering a data frame, a filter step consists of the name of the column to apply the filter to, the filter operator, and the filter condition.  When building a filter step for a framework approach we can use this logic to separate the components and recombine in the interpreter.  This enables us to have more control over the filter step itself (for example, it is simpler to include data validation), as well as having control over expression evaluation.
+A filter step can be broken down into its integral parts.  When considering filtering a data frame, a filter step consists of the name of the column to apply the filter to, the filter operator, and the filter condition.  When building a filter step for a framework approach we can use this logic to separate the components and recombine in the engine.  This enables us to have more control over the filter step itself (for example, it is simpler to include data validation), as well as having control over expression evaluation.
 
 ### Filtering on a Single Value with a Named Operator
 
@@ -109,7 +109,7 @@ data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
 print(data)
 ```
 
-The advantage of this method over the ones illustrated in @sec-command-parsing is that individual parameters can be checked for consistency prior to running the evaluation.  For example, we could update our interpreter as follows:
+The advantage of this method over the ones illustrated in @sec-command-parsing is that individual parameters can be checked for consistency prior to running the evaluation.  For example, we could update our engine as follows:
 
 ```{r filename="rlang parse_expr"}
 #| message: false
@@ -176,7 +176,7 @@ The filter step can be rewritten using the operator as a function.  The json fil
 jsonlite::write_json(list(col="mpg", operator=">", value=30), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-and the interpreter becomes:
+and the engine becomes:
 
 ```{r filename="match.fun"}
 #| message: false
@@ -230,7 +230,7 @@ print(data)
 
 ### Generic Case - Catering for Different Operators
 
-Up to now we've worked against a single type of known operator but the approach can be extended to work against any type of operator.  The interpreter below will work with common logical operators as well as the operator that we have defined as `in`:
+Up to now we've worked against a single type of known operator but the approach can be extended to work against any type of operator.  The engine below will work with common logical operators as well as the operator that we have defined as `in`:
 
 ```{r}
 #| message: false
@@ -339,7 +339,7 @@ dplyr::filter(mtcars, wt > drat)
 dplyr::filter(mtcars, wt > 4)
 ```
 
-However, when we use an interpreter to parse code built from an instruction file we might wish to use non-standard evaluation.  Unfortunately we cannot use a single approach for both column names and scalar values as `!!sym(column)` is valid but `!!sum(value)` is not.
+However, when we use an engine to parse code built from an instruction set we might wish to use non-standard evaluation.  Unfortunately we cannot use a single approach for both column names and scalar values as `!!sym(column)` is valid but `!!sum(value)` is not.
 
 ```{r}
 x1 <- 'wt'
@@ -401,7 +401,7 @@ print(data)
 
 ### Combining Data Import with a Filter Data Step
 
-Our interpreter can be expanded to import and process data.  Using concepts from @sec-importing-data, Our instruction file and interpreter can be extended as follows:
+Our engine can be expanded to import and process data.  Using concepts from @sec-importing-data, Our instruction set and engine can be extended as follows:
 
 ```json
 {
@@ -446,7 +446,7 @@ print(data)
 
 ## Mutate Step
 
-Building a mutate step is slightly different to a filter step and requires use of `:=` in place of `=`.  For example, in order to mimic the mutate step `dplyr::mutate(mtcars, my_new_column = 3)` we could use an instruction set and interpreter as follows:
+Building a mutate step is slightly different to a filter step and requires use of `:=` in place of `=`.  For example, in order to mimic the mutate step `dplyr::mutate(mtcars, my_new_column = 3)` we could use an instruction set and engine as follows:
 
 ```json
 {
@@ -492,7 +492,7 @@ print(data)
   - All components must be included in a single `arrange()` function call and cannot be built up stepwise, unlike other dplyr functions, such as `filter()`.  In a stepwise manner, the first `arrange()` function call will be discarded for the second, the second for the third and so on.  Only the last `arrange()` function call would be honored.
   - The use of the `desc()` function must be encoded in the process.  Since the `arrange()` step is not built up stepwise, use of `desc()` becomes a little more challenging.
 
-The instruction set and interpreter below illustrates how an arrange step, with multiple columns, can be built.
+The instruction set and engine below illustrates how an arrange step, with multiple columns, can be built.
 
 ```json
 [
@@ -547,7 +547,7 @@ arrange_content
 
 ### Combining Data Import with an Arrange Step
 
-Using concepts from @sec-importing-data, Our instruction file and interpreter can be extended to include an arrange step as follows:
+Using concepts from @sec-importing-data, Our instruction set and engine can be extended to include an arrange step as follows:
 
 ```json
 {

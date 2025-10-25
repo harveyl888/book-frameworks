@@ -123,3 +123,70 @@ We can build the reactivity shown above with an instruction set in more than one
 #| eval: true
 jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age")), 'data/myfile.json', auto_unbox = TRUE)
 ```
+
+
+The interpreter could look something like:
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: false
+inp <- list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age"))
+
+only_cols <- unlist(inp$columns)
+data <- readr::read_csv(inp$dataset, col_select = only_cols)
+
+library(shiny)
+
+server <- function(input, output, session) {
+  
+  output$uiout <- renderUI({
+    
+    shiny_out <- lapply(seq(ncol(data)), function(i) {
+      col_class <- sapply(data, class)[i]
+      if (col_class == "logical") {
+        ## checkbox
+        checkboxInput(inputId = sprintf("Control_%02i", i), 
+                      label = names(data)[i])
+      } else if (col_class == "numeric") {
+        ## numericInput
+        if (length(unique(data[[i]])) > 10) {
+          sliderInput(inputId = sprintf("Control_%02i", i),
+                      label = names(data)[i],
+                      min = min(data[[i]]),
+                      max = max(data[[i]]),
+                      value = min(data[[i]]))
+        } else {
+          numericInput(inputId = sprintf("Control_%02i", i), 
+                       label = names(data)[i],
+                       min = min(data[[i]]),
+                       max = max(data[[i]]),
+                       value = min(data[[i]]))
+        }
+      } else if (col_class == "character") {
+        n_values <- length(unique(data[[i]]))
+        if (n_values <= 3) {
+          ## radiobuttons
+          radioButtons(inputId = sprintf("Control_%02i", i),
+                       label = names(data)[i],
+                       inline = TRUE,
+                       choices = sort(unique(data[[i]])))
+        } else {
+          ## selectizeInput
+          selectizeInput(inputId = sprintf("Control_%02i", i),
+                         label = names(data)[i],
+                         choices = sort(unique(data[[i]])))
+        }
+      } 
+    })
+    tagList(shiny_out)
+  })
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```

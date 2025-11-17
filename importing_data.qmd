@@ -199,7 +199,7 @@ We can test the speed of `base::read.csv`, `readr::read_csv` and `data.table::fr
 ```{r}
 #| cache: true
 #| warning: false
-out_read_all <- lapply(seq(2), function(i) {
+out_read_all <- purrr::map(seq(2), \(i) {
   f <- sprintf("data/f_%02i.csv", i)
   bench::mark(
     `read.csv` = read.csv(f),
@@ -214,10 +214,10 @@ out_read_all <- lapply(seq(2), function(i) {
 #| cache: true
 #| message: false
 df <- tidyr::unnest(out_read_all[[1]], c(time, gc)) |> 
-  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv")))
-ggplot2::ggplot(df, ggplot2::aes(expression, time)) + 
+  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv"))) |>
+  dplyr::mutate(ms = as.numeric(time, units = "ms"))
+ggplot2::ggplot(df, ggplot2::aes(ms, expression)) + 
   ggplot2::geom_violin() + 
-  ggplot2::coord_flip() +
   ggplot2::ggtitle("Time to read long-format file")
 ```
 
@@ -225,10 +225,10 @@ ggplot2::ggplot(df, ggplot2::aes(expression, time)) +
 #| cache: true
 #| message: false
 df <- tidyr::unnest(out_read_all[[2]], c(time, gc)) |> 
-  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv")))
-ggplot2::ggplot(df, ggplot2::aes(expression, time)) + 
+  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv"))) |>
+  dplyr::mutate(ms = as.numeric(time, units = "ms"))
+ggplot2::ggplot(df, ggplot2::aes(ms, expression)) + 
   ggplot2::geom_violin() + 
-  ggplot2::coord_flip() +
   ggplot2::ggtitle("Time to read wide-format file")
 ```
 
@@ -247,7 +247,7 @@ Both `readr::read_csv` and `data.table::fread` include a parameter to limit the 
 ```{r}
 #| cache: true
 #| warning: false
-out_select <- lapply(seq(2), function(i) {
+out_select <- purrr::map(seq(2), \(i) {
   f <- sprintf("data/f_%02i.csv", i)
   chosen_cols <- c("X1", paste0("X", sample(x = seq(d[[i]][2])[-1], size = 5)))
   bench::mark(
@@ -264,10 +264,10 @@ out_select <- lapply(seq(2), function(i) {
 #| cache: true
 #| message: false
 df <- tidyr::unnest(out_select[[1]], c(time, gc)) |> 
-  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv")))
-ggplot2::ggplot(df, ggplot2::aes(expression, time)) + 
+  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv"))) |>
+  dplyr::mutate(ms = as.numeric(time, units = "ms"))
+ggplot2::ggplot(df, ggplot2::aes(ms, expression)) + 
   ggplot2::geom_violin() + 
-  ggplot2::coord_flip() +
   ggplot2::ggtitle("Time to read long-format file (selected columns)")
 ```
 
@@ -275,10 +275,10 @@ ggplot2::ggplot(df, ggplot2::aes(expression, time)) +
 #| cache: true
 #| message: false
 df <- tidyr::unnest(out_select[[2]], c(time, gc)) |> 
-  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv")))
-ggplot2::ggplot(df, ggplot2::aes(expression, time)) + 
+  dplyr::mutate(expression = factor(expression, levels = c("fread", "read_csv", "read.csv"))) |>
+  dplyr::mutate(ms = as.numeric(time, units = "ms"))
+ggplot2::ggplot(df, ggplot2::aes(ms, expression)) + 
   ggplot2::geom_violin() + 
-  ggplot2::coord_flip() +
   ggplot2::ggtitle("Time to read wide-format file (selected columns)")
 ```
 
@@ -307,7 +307,7 @@ if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
 print(data)
 ```
 
-and our instruction set should be updated as follows:
+and our instruction file should be updated as follows:
 
 ```json
 {

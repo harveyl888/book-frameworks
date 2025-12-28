@@ -1,8 +1,10 @@
 # The Instruction Set
 
-The instruction set tells the engine what to do.  Once read, the engine then parses the instructions and responds accordingly.  The instruction set should be written in a human-readable form and be editable by hand or programmatically.  One of the best choices is to write instructions using the JSON format.  JSON (Javascript Object Notation) is a lightweight, language-independent, human-readable format for transferring data.  There exist several R libraries to import and convert between JSON and R list format (for the purpose of this book we will use {jsonlite} to convert between formats).
+The instruction set tells the engine what to do.  Once read, the engine then parses the instructions and responds accordingly.  The instruction set should be written in a human-readable form and be editable by hand or programmatically.  Two common formats that can be used for building instruction sets are JSON and YAML.
 
 ## The JSON Format
+
+JSON (Javascript Object Notation) is a lightweight, language-independent, human-readable format for transferring data.  Several R libraries are available to import and convert between JSON and R list format (for the purpose of this book we will use {jsonlite} to convert between formats).
 
 JSON objects are made up of key-value pairs separated by a colon surrounded by curly braces.  An example of a json object is shown below:
 
@@ -45,7 +47,7 @@ JSON also accepts arrays, enclosed in square braces:
 }
 ```
 
-### Using the {jsonlite} Package
+### Using the {jsonlite} R Package
 
 {jsonlite} can quickly convert between JSON and R data types.  Generally, when using JSON as an instruction format for frameworks, we will be converting the JSON format into an R list.  A list provides several benefits when we wish to parse data through an engine.  
 
@@ -71,6 +73,120 @@ jsonlite::fromJSON(json_string, simplifyVector = FALSE)
 ```
 
 The argument `simplifyVector =  TRUE` is included to stop simplification in which the JSON string could be converted into a more specific data type.  
+
+## The YAML Format
+
+Similar to JSON, YAML (YAML Ain't Markup Language) is a lightweight, language-independent, human-readable format for transferring data.  It primarily differs from JSON by using indentation as opposed to brackets to denote shape and function.  
+
+YAML objects are made up of key-value pairs separated by a colon.  Unlike JSON, No braces are required and strings do not have to be quoted, unless special characters are included.  An example of a YAML object is shown below:
+
+```yaml
+name: Joe Bloggs
+age: 25
+family_member: true
+```
+
+This is very similar to the JSON example above, key-value pairs.  The first (*name*) returns a string, the second (*age*) returns a numeric and the third (*family_member*) returns a boolean.
+
+Indentation provides structure to YAML data.  The specific number of spaces used to indent is not important as long as parallel elements have the same indentation.  Subsequent indentations define the data structure further.
+
+```yaml
+name: Joe Bloggs
+age: 25
+family_member: true
+pets:
+  has_pets: true
+  number_pets: 3
+```
+
+Arrays can be specified using a hyphen and space as folows:
+
+```yaml
+name: Joe Bloggs
+age: 25
+family_member: true
+pets:
+  has_pets: true
+  number_pets: 3
+  pet_types:
+    - dog
+    - dog
+    - cat
+```
+
+### Using the {yaml} R Package
+
+{yaml} can read in and convert a YAML file to an R list.  To convert the YAML above to a list use `yaml::yaml.load()` as folllows:
+
+```{r}
+yaml_string <- "
+name: Joe Bloggs
+age: 25
+family_member: true
+pets:
+  has_pets: true
+  number_pets: 3
+  pet_types:
+    - dog
+    - dog
+    - cat
+"
+yaml::yaml.load(yaml_string)
+```
+
+### Working with Booleans
+
+Care should be taken with YAML as several values may be interpreted as boolean `true` and `false`.  In YAML 1.1 all of the following will be interpreted as `true`:  
+y, Y, yes, Yes, YES, true, True, TRUE, on, On, ON  
+and all of the following will be interpreted as `false`:
+n, N, no, No, NO, false, False, FALSE, off, Off, OFF  
+When using YAML 1.2 the only boolean values allowed are `true` and `false`.  The {yaml} package, however, implements the `libyaml` parser which is based on YAML 1.1.  Therefore the following will all return `true`
+
+```yaml
+val1: true
+val2: on
+val3: Y
+```
+
+```{r}
+#| echo: false
+tmp_yaml <- "
+val1: true
+val2: on
+val3: Y
+"
+yaml::yaml.load(tmp_yaml)
+```
+
+If strings are required instead of booleans, values should be quoted:
+
+```yaml
+val1: true
+val2: 'on'
+val3: "Y"
+```
+
+```{r}
+#| echo: false
+tmp_yaml <- "
+val1: true
+val2: 'on'
+val3: \"Y\"
+"
+yaml::yaml.load(tmp_yaml)
+```
+
+## Differences Between JSON and YAML
+
+-  Format - JSON uses braces, brackets and quotes, YAML uses indentation and no quotes.
+-  Comments - JSON does not support comments whereas YAML does.
+-  Data Types - JSON can handle strings, numbers, objects, arrays, booleans and nulls.  YAML can handle some additional types
+
+YAML is a superset of JSON.  Any valid JSON is also valid YAML.  Either can be used but when should you use each?  JSON is stricter and simpler than YAML, whereas YAML is more human-readable.  JSON is commonly used in machine-to-machine communication, whereas YAML has been adopted more when written by a human.
+
+:::{.callout-note}
+This book will use JSON format from this point forward but, please note, YAML could be substituted in its place.
+:::
 
 ## Coding Instructions
 

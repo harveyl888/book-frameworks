@@ -4,54 +4,51 @@ A minimal amount of shiny reactivity can be introduced in an automated fashion. 
 
 ## Adding Reactivity - Multiple observeEvents
 
-In this example, we'll build a series of actionButtons and assign a shiny observe/bindEvent function to each.  The observe function responds to a button press, updating a reactiveValue.  It's important to note that in the code below we generate five observe functions programatically.
+In this example, we'll build a series of actionButtons and assign a shiny `observeEvent()` function to each.  The `observeEvent()` responds to a button press, updating a reactive value (`clicked()`).  It's important to note that in the code below we generate five observe functions programmatically.
 
 ```{r}
 #| eval: false
+library(shiny)
+
 server <- function(input, output, session) {
   
-  rv <- reactiveValues(
-    click = ""
-  )
-  
-  output$uiout <- renderUI({
-    lapply(seq(5), function(i) {
-      observe({
-        rv$click <- paste0("Button ", i, " clicked")
-      }) |>
-        bindEvent(input[[paste0("but_", i)]], ignoreInit = TRUE)
-    })
-    
-    tagList(
-      lapply(seq(5), function(i) {
-        actionButton(inputId = paste0("but_", i), label = paste0("Button ", i))
-      })
-    )
+  clicked <- reactiveVal("No Button Clicked")
+
+  lapply(seq_len(5), function(i) {
+    observeEvent(input[[paste0("but_", i)]], {
+      clicked(paste0("Button ", i, " clicked"))
+    }, ignoreInit = TRUE)
   })
-  
+
   output$txt <- renderPrint(
-    print(rv$click)
+    clicked()
   )
-  
+
 }
 
 ui <- fluidPage(
-  uiOutput('uiout')
+  tagList(
+    lapply(seq(5), function(i) {
+      actionButton(inputId = paste0("but_", i), label = paste0("Button ", i))
+    })
+  ),
   verbatimTextOutput("txt")
 )
 
 shinyApp(ui, server)
 ```
 
-The resulting app contains five actionButtons, each linked to an observeEvent.
+The resulting app contains five actionButtons, each linked to an `observeEvent()`.
 
 ![](images/shiny_reactivity_01.png)
 
-The reactive graph illustrates the five observeEvent functions created programatically.
+The reactive graph illustrates the five `observeEvent()` functions created programmatically.
 
 ![](images/shiny_reactivity_02.png)
 
-Although effective, this is not a very efficient way of programming.  The next section will ilustrate how to achieve the same effect with a single observe/bindEvent function.
+Although this works, it is not a very efficient way of programming.  One problem with this approach is that observers are never cleaned up.  If a version of this code is run multiple times observers are created each time.  Shiny does not garbage-collect or automatically remove observers even if the UI component is removed. This can lead to memory leaks as too many observers will slow down a shiny session.
+
+The next section will illustrate how to achieve the same effect with a single observeEvent().
 
 ## Adding Reactivity - Single observeEvent
 
@@ -59,36 +56,31 @@ In this example, we'll build the same series of actionButtons but this time assi
 
 ```{r}
 #| eval: false
+library(shiny)
+
 server <- function(input, output, session) {
   
-  rv <- reactiveValues(
-    click = ""
-  )
-  
-  output$uiout <- renderUI({
-    
-    observe({
-      rv$click <- paste0("Button ", input$button_click, " clicked")
-    }) |>
-      bindEvent(input$button_click, ignoreInit = TRUE)
-    
-    tagList(
-      lapply(seq(5), function(i) {
-        actionButton(inputId = paste0("but_", i),
-                     label = paste0("Button ", i),
-                     onclick=paste0('Shiny.setInputValue("button_click", ', i, ', {priority: "event"})'))
-      })
-    )
+  clicked <- reactiveVal("No Button Clicked")
+
+  observeEvent(input$button_click, {
+    clicked(paste0("Button ", input$button_click, " clicked"))
   })
-  
+
   output$txt <- renderPrint(
-    print(rv$click)
+    clicked()
   )
-  
+
 }
 
 ui <- fluidPage(
-  uiOutput('uiout')
+  br(),
+  tagList(
+    lapply(seq(5), function(i) {
+      actionButton(inputId = paste0("but_", i),
+                    label = paste0("Button ", i),
+                    onclick = paste0('Shiny.setInputValue("button_click", ', i, ', {priority: "event"})'))
+    })
+  ),
   verbatimTextOutput("txt")
 )
 
@@ -103,11 +95,13 @@ The reactive graph illustrates the simpler reactivity.
 
 ![](images/shiny_reactivity_04.png)
 
-Here, it should be noted, that we have added an onclick event to each actionButton to trigger an observeEvent.  When an actionButton is clicked the shiny reactive `input$button_click` is updated to the index of the button. 
+Here, it should be noted, that we have added an **onclick** event to each actionButton to trigger an observeEvent.  When an actionButton is clicked the shiny reactive `input$button_click` is updated to the index of the button. 
+
+This 
 
 ## Applied Using an Instruction set
 
-We can build the reactivity shown above with an instruction set in more than one way.  The simplest approach assumes that all functionality is already included in the code.  For example, following on from the example in @sec-interface-assignment-widgets, which uses the `survivalists.csv` Alone data set from Tidy Tuesday: 
+Reactivity can be built using the instruction set.  The examples below will use the example interface from @sec-interface-assignment-widgets, which uses the `survivalists.csv` Alone data set from Tidy Tuesday.  In the first example, we'll include an instruction set that specifies that two of the widgets have reactivity.  As the season and age widgets are changed, their values will be printed to the console.
 
 ```json
 {
@@ -124,63 +118,82 @@ We can build the reactivity shown above with an instruction set in more than one
 jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-
 The engine could look something like:
 
 ```{r}
 #| message: false
 #| warning: false
 #| eval: false
+library(shiny)
+
 inp <- list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age"))
 
 only_cols <- unlist(inp$columns)
 data <- readr::read_csv(inp$dataset, col_select = only_cols)
 
-library(shiny)
-
 server <- function(input, output, session) {
   
   output$uiout <- renderUI({
     
-    shiny_out <- lapply(seq(ncol(data)), function(i) {
-      col_class <- sapply(data, class)[i]
-      if (col_class == "logical") {
-        ## checkbox
-        checkboxInput(inputId = sprintf("Control_%02i", i), 
-                      label = names(data)[i])
-      } else if (col_class == "numeric") {
-        ## numericInput
-        if (length(unique(data[[i]])) > 10) {
-          sliderInput(inputId = sprintf("Control_%02i", i),
-                      label = names(data)[i],
-                      min = min(data[[i]]),
-                      max = max(data[[i]]),
-                      value = min(data[[i]]))
-        } else {
-          numericInput(inputId = sprintf("Control_%02i", i), 
-                       label = names(data)[i],
-                       min = min(data[[i]]),
-                       max = max(data[[i]]),
-                       value = min(data[[i]]))
-        }
-      } else if (col_class == "character") {
-        n_values <- length(unique(data[[i]]))
-        if (n_values <= 3) {
-          ## radiobuttons
-          radioButtons(inputId = sprintf("Control_%02i", i),
-                       label = names(data)[i],
-                       inline = TRUE,
-                       choices = sort(unique(data[[i]])))
-        } else {
-          ## selectizeInput
-          selectizeInput(inputId = sprintf("Control_%02i", i),
-                         label = names(data)[i],
+    if (isTRUE(inp$build_widgets)) {
+      shiny_out <- lapply(seq_len(ncol(data)), function(i) {
+        col_class <- sapply(data, class)[i]
+        label <- names(data)[i]
+        input_id <- paste0("Control_", label)
+        if (col_class == "logical") {
+          ## checkbox
+          checkboxInput(inputId = input_id, 
+                        label = label)
+        } else if (col_class == "numeric") {
+          ## numericInput
+          if (length(unique(data[[i]])) > 10) {
+            sliderInput(inputId = input_id,
+                        label = label,
+                        min = min(data[[i]]),
+                        max = max(data[[i]]),
+                        value = min(data[[i]]))
+          } else {
+            numericInput(inputId = input_id, 
+                         label = label,
+                         min = min(data[[i]]),
+                         max = max(data[[i]]),
+                         value = min(data[[i]]))
+          }
+        } else if (col_class == "character") {
+          n_values <- length(unique(data[[i]]))
+          if (n_values <= 3) {
+            ## radiobuttons
+            radioButtons(inputId = input_id,
+                         label = label,
+                         inline = TRUE,
                          choices = sort(unique(data[[i]])))
-        }
-      } 
-    })
-    tagList(shiny_out)
+          } else {
+            ## selectizeInput
+            selectizeInput(inputId = input_id,
+                           label = label,
+                           choices = sort(unique(data[[i]])))
+          }
+        } 
+      })
+      tagList(shiny_out)
+    }
   })
+
+  ## create reactivity
+  if (isTRUE(inp$build_widgets) & isTRUE(length(inp$widget_reactivity) > 0)) {
+    lapply(inp$widget_reactivity, function(x) {
+      input_id <- paste0("Control_", x)
+      cli::cli_alert_info("observeEvent built for \'{input_id}\'")
+      observeEvent(input[[input_id]], {
+        cat(
+          sprintf("\'%s\' changed to %s\n",
+            input_id,
+            toString(input[[input_id]])
+          )
+        )
+      }, ignoreInit = TRUE)
+    })
+  }
 }
 
 ui <- fluidPage(
@@ -190,3 +203,120 @@ ui <- fluidPage(
 shinyApp(ui, server)
 
 ```
+
+::: {.callout-warning}
+The UI is built using `renderUI()` but the `observeEvent()` functions are not.  Observers should not be tied to `renderUI()` as there is a danger that they can be built more than once.
+:::
+
+In the example above, the observers are built using an lapply loop within the `server()` function.  Each observer simply prints the value of the widget when it changes.
+
+Our concept can become a little more complex by including different observers for different types of widget.  In the example below, changing the numericInput triggers one observer, whereas changing the sliderInput triggers another.
+
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: false
+library(shiny)
+
+inp <- list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-24/survivalists.csv", columns=list("season", "age", "gender", "country", "medically_evacuated", "profession"), build_widgets=TRUE, widget_reactivity=list("season", "age"))
+
+only_cols <- unlist(inp$columns)
+data <- readr::read_csv(inp$dataset, col_select = only_cols)
+
+server <- function(input, output, session) {
+  
+  output$uiout <- renderUI({
+    
+    if (isTRUE(inp$build_widgets)) {
+      shiny_out <- lapply(seq_len(ncol(data)), function(i) {
+        col_class <- sapply(data, class)[i]
+        label <- names(data)[i]
+        input_id <- paste0("Control_", label)
+        if (col_class == "logical") {
+          ## checkbox
+          checkboxInput(inputId = input_id, 
+                        label = label)
+        } else if (col_class == "numeric") {
+          ## numericInput
+          if (length(unique(data[[i]])) > 10) {
+            sliderInput(inputId = input_id,
+                        label = label,
+                        min = min(data[[i]]),
+                        max = max(data[[i]]),
+                        value = min(data[[i]]))
+          } else {
+            numericInput(inputId = input_id, 
+                        label = label,
+                        min = min(data[[i]]),
+                        max = max(data[[i]]),
+                        value = min(data[[i]]))
+          }
+        } else if (col_class == "character") {
+          n_values <- length(unique(data[[i]]))
+          if (n_values <= 3) {
+            ## radiobuttons
+            radioButtons(inputId = input_id,
+                        label = label,
+                        inline = TRUE,
+                        choices = sort(unique(data[[i]])))
+          } else {
+            ## selectizeInput
+            selectizeInput(inputId = input_id,
+                          label = label,
+                          choices = sort(unique(data[[i]])))
+          }
+        } 
+      })
+      tagList(shiny_out)
+    }
+  })
+
+  ## create reactivity
+  if (isTRUE(inp$build_widgets) & isTRUE(length(inp$widget_reactivity) > 0)) {
+    lapply(inp$widget_reactivity, function(x) {
+      col_class <- sapply(data, class)[x]
+      input_id <- paste0("Control_", x)
+      cli::cli_alert_info("observeEvent built for \'{input_id}\'")
+      if (col_class == "numeric") {
+        if (length(unique(data[[x]])) > 10) {
+          ## sliderInput
+          observeEvent(input[[input_id]], {
+            cat(
+              sprintf("SLIDER \'%s\' changed to %s\n",
+                input_id,
+                toString(input[[input_id]])
+              )
+            )
+          }, ignoreInit = TRUE)
+        } else {
+          ## numericInput
+          observeEvent(input[[input_id]], {
+            cat(
+              sprintf("NUMERIC \'%s\' changed to %s\n",
+                input_id,
+                toString(input[[input_id]])
+              )
+            )
+          }, ignoreInit = TRUE)
+        }
+      }
+    })
+  }
+}
+
+ui <- fluidPage(
+  uiOutput('uiout')
+)
+
+shinyApp(ui, server)
+
+```
+
+::: {.callout-important}
+The lapply loop that builds the observeEvents chooses the output type (numeric or slider) based on the number of unique values in a column.  It cannot identify the type of widget (and hence determine if a numericInput or sliderInput has been used) for two reasons:
+
+-  Shiny does not store the type of an input.  A workaround would be to use the type of widget in its name (for example slider_age).
+-  Even if the type of input could be deduced (for example from a widget name), the observers are built before the UI is generated.
+:::
+

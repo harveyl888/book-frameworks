@@ -99,7 +99,7 @@ Here, it should be noted, that we have added an **onclick** event to each action
 
 This 
 
-## Applied Using an Instruction set
+## Applied Using an Instruction Set
 
 Reactivity can be built using the instruction set.  The examples below will use the example interface from @sec-interface-assignment-widgets, which uses the `survivalists.csv` Alone data set from Tidy Tuesday.  In the first example, we'll include an instruction set that specifies that two of the widgets have reactivity.  As the season and age widgets are changed, their values will be printed to the console.
 
@@ -205,7 +205,7 @@ shinyApp(ui, server)
 ```
 
 ::: {.callout-warning}
-The UI is built using `renderUI()` but the `observeEvent()` functions are not.  Observers should not be tied to `renderUI()` as there is a danger that they can be built more than once.
+The UI is built within `renderUI()` but the `observeEvent()` functions are not.  Observers should not be tied to `renderUI()` as there is a danger that they can be built more than once.
 :::
 
 In the example above, the observers are built using an lapply loop within the `server()` function.  Each observer simply prints the value of the widget when it changes.
@@ -316,7 +316,7 @@ shinyApp(ui, server)
 ::: {.callout-important}
 The lapply loop that builds the observeEvents chooses the output type (numeric or slider) based on the number of unique values in a column.  It cannot identify the type of widget (and hence determine if a numericInput or sliderInput has been used) for two reasons:
 
--  Shiny does not store the type of an input.  A workaround would be to use the type of widget in its name (for example slider_age).
+-  Shiny does not store the type of an input.  A workaround would be to use the type of widget in its name (for example `input$slider_age`).
 -  Even if the type of input could be deduced (for example from a widget name), the observers are built before the UI is generated.
 :::
 

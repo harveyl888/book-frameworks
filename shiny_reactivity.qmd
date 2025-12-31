@@ -97,8 +97,6 @@ The reactive graph illustrates the simpler reactivity.
 
 Here, it should be noted, that we have added an **onclick** event to each actionButton to trigger an observeEvent.  When an actionButton is clicked the shiny reactive `input$button_click` is updated to the index of the button. 
 
-This 
-
 ## Applied Using an Instruction Set
 
 Reactivity can be built using the instruction set.  The examples below will use the example interface from @sec-interface-assignment-widgets, which uses the `survivalists.csv` Alone data set from Tidy Tuesday.  In the first example, we'll include an instruction set that specifies that two of the widgets have reactivity.  As the season and age widgets are changed, their values will be printed to the console.

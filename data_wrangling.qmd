@@ -529,7 +529,7 @@ Mutate can also be used with a glue-like syntax to pass column names as paramete
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}"  := inp$value)
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := inp$value)
 print(data)
 ```
 
@@ -613,10 +613,18 @@ which, built using `rlang::call2()` would look like:
 
 ```{r}
 #| eval: false
-expr <- rlang::call2("+", rlang::call2("*", rlang::sym("mpg"), rlang::sym("cyl"), 5))
+expr <- rlang::call2(
+  "+", 
+  rlang::call2(
+    "*", 
+    rlang::sym("mpg"), 
+    rlang::sym("cyl")
+  ), 
+  5
+)
 ```
 
-To include this in a JSON expression, we can consider recursively breaking the entire expression into smaller and smaller expressions comprising of an operator, a left-hand side and a right-hand side.  As an instruction set this could look like:
+To include this in a JSON expression, we can consider recursively breaking the entire expression into smaller and smaller expressions comprising of an operator, a left-hand side and a right-hand side (`lhs`:`operator`:`rhs`).  As an instruction set this could look like:
 
 ```json
 {
@@ -636,6 +644,8 @@ To include this in a JSON expression, we can consider recursively breaking the e
 #| eval: true
 jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs="mpg", rhs="cyl"), rhs=5), 'data/myfile.json', auto_unbox = TRUE)
 ```
+
+and the engine would be:
 
 ```{r}
 #| message: false
@@ -669,9 +679,9 @@ data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
 print(data)
 ```
 
-The solution contains a recursive function which keeps calling itself on the left and right hand side operations until they result in a column name or value.
+The solution contains a recursive function (`build_expr()`) which keeps calling itself on the left and right hand side operations until they result in a column name or value.
 
-This method is not fool-proof and works for simple, general cases.  Ideally, the logic should be constructed so that anything representing a *name* is returned as a symbol and anything else should be returned as a literal.  In order to achieve this we need to know when a string is a *name* and when it is a string.  For example - it would be impossible for this code to determine if "mpg" refers to the column called mpg or a string "mpg".  One solution would be to specify in the JSON format itself, for example:
+This method is not foolproof but works for many general cases.  Ideally, the logic should be constructed so that anything that needs to be looked up at execution time is represented as a symbol, while anything else that should be taken as-is is represented as a literal.  To achieve this, the system needs to know when an input string represents a name to be evaluated versus when it represents a character value.  For example, it is impossible for this code to determine if "mpg" refers to the column named mpg or the literal string "mpg".  One way to resolve this ambiguity is to encode the intent directly into the JSON format itself, for example:
 
 ```json
 {
@@ -700,6 +710,8 @@ This method is not fool-proof and works for simple, general cases.  Ideally, the
 #| eval: true
 jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs=list(type="column", value="mpg"), rhs=list(type="column", value="cyl")), rhs=list(type="literal", value=5)), 'data/myfile.json', auto_unbox = TRUE)
 ```
+
+and our new engine becomes:
 
 ```{r}
 #| message: false

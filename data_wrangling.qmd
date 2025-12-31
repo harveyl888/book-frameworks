@@ -4,7 +4,48 @@
 
 Once imported, one or more data wrangling steps are often required to manipulate data into its required form and format.  This chapter illustrates how data wrangling can be performed using a instruction set using the {dplyr} library.  Of course, other approaches, such as using base R functions and {data.table} may also be applied and the concepts presented here will hold true.
 
-## Non-Standard Evaluation
+## Non-Standard Evaluation and Tidy Evaluation
+
+### Non-Standard Evaluation
+
+In base R, most functions use standard evaluation, i.e. arguments are evaluated before the function is called.  For example when evaluating `mean(x)`, `x` is evaluated immediately and passed to the `mean()` function.
+
+Many **tidyverse** verbs behave differently.  In functions such as `dplyr::filter()` and `dplyr::mutate()`, expressions are captured first and evaluated later, known as **non-standard evaluation (NSE)**.  For example in `dplyr::filter(mtcars, mpg > 30)` **mpg > 30** is not evaluated immediately.  Instead it is captured as an expression and evaluated later.  This delayed evaluation allows the column name, **mpg** to be written as if it were a variable.
+
+### Tidy Evaluation
+
+Non-standard evaluation works well for interactive use but creates challenges when working programatically.  Tidy evaluation allows us to capture expressions and manipulate them as data.  In tidy evaluation we can create a symbol, which is something that is looked up at evaluation time, using the `rlang::sym()` function.  For example, considering the three code blocks below:
+
+```{r, filename="non-standard evaluation"}
+## non-standard evaluation
+## this code works
+dplyr::filter(mtcars, mpg > 30)
+```
+
+```{r, filename="variables: fail"}
+#| error: false
+## this code fails
+col <- "mpg"
+value <- 30
+dplyr::filter(mtcars, col > value)
+```
+
+```{r, filename="variables: success"}
+## this code works
+col <- "mpg"
+expr <- rlang::sym(col)
+value <- 30
+dplyr::filter(mtcars, !!expr > value)
+```
+
+The first example works because it is the simplest case of non-standard evaluation and is well suited for interactive use.  
+The second example attempts to run the same code using variables.  This fails because **col** in the expression **col > value** is treated as the literal variable name rather than being resolved to the column name **mpg**.  
+In the third example, we construct an expression, `expr` from the *symbol* corresponding to **col**.  We then use the `!!` operator to inject that symbol into `dplyr::filter()`.  Since `rlang::sym(col)` produces the symbol **mpg**, the expression  
+`dplyr::filter(mtcars, !!expr > value)`  
+is equivalent to  
+`dplyr::filter(mtcars, mpg > value)`.
+
+While `!!` allows a single symbol or expression to be injected into a tidy-evaluated call, there are times where we wish to inject multiple expressions at once.  The `!!!` operator is used to splice a list of expressions into a function call.  This can be particularly useful when building a list of `dplyr::filter()` or `dplyr::arrange()` conditions.
 
 ## Command Parsing {#sec-command-parsing}
 
@@ -591,7 +632,7 @@ print(data)
 
 This example illustrates a similar issue explored in @sec-combining-values-and-column-names, namely two approaches are necessary when using column names and values.
 
-### Multiple Steps
+### More Complex Mutate Steps
 
 So far we have seen fairly simple mutate functions.  What if we wish to build something that combines some of these approaches.  For example, how would we build a generalized solution that could cope with `new_col = mpg * cyl + 5`?  We already know we have to treat values and column names differently, and that we wish to avoid parsing the entire expression.
 

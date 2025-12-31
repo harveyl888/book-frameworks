@@ -152,7 +152,7 @@ In R, operators, such as `==`, `>`, `<`, etc are functions.
 `==`(4,4)
 ```
 
-As a more programmatic approach, `match.fun()` or `call` may be used:
+As a more programmatic approach, `match.fun()`, `call` or `rlang::call2()` may be used which allows us to move away from evaluating expressions directly.
 
 ```{r}
 operator <- "=="
@@ -192,10 +192,20 @@ data <- dplyr::filter(mtcars, !!call(inp$operator, rlang::sym(inp$col), inp$valu
 print(data)
 ```
 
+```{r filename="rlang::call2"}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::filter(mtcars, !!rlang::call2(inp$operator, rlang::sym(inp$col), inp$value))
+print(data)
+```
+
+::: {.callout-tip}
+`rlang::call2()` is the preferred way of working as it is tidy-eval compatible. This means that we can define an expression (eg `expr = rlang::call2(inp$operator, rlang::sym(inp$col), inp$value)`) and use it later inside a dplyr verb (eg `dplyr::filter(!!expr)`).  The expression is evaluated the time of execution, not definition.  `call()` works in a similar manner but is not as flexible and `match.fun()` executes immediately.
+:::
+
 ### Filtering against a List of Values
 
 Once the logic for filtering against a single value has been determined it is simple to change it to work for multiple values.  In the example below the value has been replaced by an array of values and the operator is called `in`.
-
 
 ```json
 {
@@ -214,17 +224,17 @@ jsonlite::write_json(list(col="cyl", operator="in", value=list(4,5,6)), 'data/my
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-filter_expr <- glue::glue("{inp$col} %in% c({glue::glue_collapse(inp$value, sep=',')})")
-data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+data <- dplyr::filter(mtcars, !!rlang::sym(inp$col) %in% unlist(inp$value))
 print(data)
 ```
 
-Alternatively, the expression can be built without using {glue}, using `%in%` directly:
+The same example, using `rlang::call2()` is:
 
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::filter(mtcars, !!rlang::sym(inp$col) %in% unlist(inp$value))
+expr <- rlang::call2("%in%", rlang::sym(inp$col), unlist(inp$value))
+data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
 
@@ -237,11 +247,44 @@ Up to now we've worked against a single type of known operator but the approach 
 #| eval: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 if (inp$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
-  data <- dplyr::filter(mtcars, match.fun(inp$operator)(!!rlang::sym(inp$col), inp$value))
+  expr <- rlang::call2(inp$operator, rlang::sym(inp$col), inp$value)
 } else if (inp$operator == "in") {
-  data <- dplyr::filter(mtcars, !!rlang::sym(inp$col) %in% unlist(inp$value))
+  expr <- rlang::call2("%in%", rlang::sym(inp$col), unlist(inp$value))
 }
+data <- dplyr::filter(mtcars, !!expr)
 print(data)
+```
+
+#### Mapping
+
+This can be further generalized by mapping operators, building a 1:1 mapping from the operator name to the function.
+
+```{r}
+operators <- c(
+  "==" = "==",
+  ">" = ">",
+  ">=" = ">=",
+  "<" = "<",
+  "<=" = "<=",
+  "!=" = "!=",
+  "in" = "%in%"
+)
+```
+
+Since the two separated expressions in the example above are essentially identical:  
+`expr <- rlang::call2(inp$operator, rlang::sym(inp$col), inp$value)`  
+`expr <- rlang::call2("%in%", rlang::sym(inp$col), unlist(inp$value))`  
+We can combine them into a single expression, when using mapping:
+
+```{r}
+#| message: false
+#| eval: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (inp$operator %in% names(operators)) {
+  expr <- rlang::call2(operators[[inp$operator]], rlang::sym(inp$col), unlist(inp$value))
+  data <- dplyr::filter(mtcars, !!expr)
+  print(data)
+}
 ```
 
 ### Multiple Operators
@@ -250,15 +293,15 @@ Filter steps can be combined using `AND` and `OR` logic to build more complex ca
 
 #### Combining Filters using `AND`
 
-`AND` is a the default behavior when filters are combined.  The first filter is performed followed by the second and subsequent operators.  To demonstrate, we'll add two filter steps as follows:
+`AND` is a the default behavior when filters are combined.  The first filter is performed followed by the second and subsequent operators, updating the output data each time.  To demonstrate, we'll add two filter steps as follows:
 
 ```json
 {
   "filter_steps" : [
     {
-      "col": "cyl",
-      "operator": "in",
-      "value": [4, 5, 6]
+      "col": "carb",
+      "operator": "==",
+      "value": 2
     },
     {
       "col": "mpg",
@@ -272,7 +315,7 @@ Filter steps can be combined using `AND` and `OR` logic to build more complex ca
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator="in", value=list(4,5,6)), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(filter_steps=list(list(col="carb", operator="==", value=2), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -280,26 +323,23 @@ jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator="in", value
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 data <- mtcars
 for (step in inp$filter_steps) {
-  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
-    data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), step$value))
-  } else if (step$operator == "in") {
-    data <- data |> dplyr::filter(!!rlang::sym(step$col) %in% unlist(step$value))
-  }
+  expr <- rlang::call2(operators[[step$operator]], rlang::sym(step$col), unlist(step$value))
+  data <- dplyr::filter(data, !!expr)
 }
 print(data)
 ```
 
 #### Combining Filters using `OR`
 
-`OR` is a little more challenging than `AND` since we cannot simply loop through the conditions and add them sequentially.  One way to work with `OR` logic is to build a single expression through concatenating conditions with the `|` operator and evaluating the resulting combination.  To demonstrate, we'll add two filter steps as follows:
+`OR` is a little more challenging than `AND` since we cannot simply loop through the conditions and add them sequentially.  One way to work with `OR` logic is to build a single expression through concatenating conditions with the `|` operator and evaluating the resulting combination.  To demonstrate, we'll add two filter steps.  `purrr::reduce()` is used to combine the two steps into a single filter 'OR' condition.
 
 ```json
 {
   "filter_steps" : [
     {
-      "col": "cyl",
-      "operator": "in",
-      "value": [4, 5, 6]
+      "col": "carb",
+      "operator": "==",
+      "value": 2
     },
     {
       "col": "mpg",
@@ -313,24 +353,25 @@ print(data)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator="in", value=list(4,5,6)), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(filter_steps=list(list(col="carb", operator="==", value=2), list(col="mpg", operator=">", value=30))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 filter_expr <- lapply(inp$filter_steps, function(step) {
-  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
-    glue::glue("{step$col}{step$operator}{step$value}")
-  } else if (step$operator == "in") {
-    glue::glue("{step$col} %in% c({glue::glue_collapse(step$value, sep=',')})")
-  }
-}) |> glue::glue_collapse(sep = " | ")
-data <- dplyr::filter(mtcars, !!rlang::parse_expr(filter_expr))
+  rlang::call2(operators[[step$operator]], rlang::sym(step$col), unlist(step$value))
+})
+print(filter_expr)
+
+filter_or_expr <- purrr::reduce(filter_expr, ~rlang::call2("|", .x, .y))
+print(filter_or_expr)
+
+data <- dplyr::filter(mtcars, !!filter_or_expr)
 print(data)
 ```
 
-### The Challenge of Values and Column Names
+### The Challenge of Values and Column Names {#sec-combining-values-and-column-names}
 
 It is important to note the difference between filtering against a value vs. filtering against another column.  For example, in R each of the following are valid:
 
@@ -339,19 +380,31 @@ dplyr::filter(mtcars, wt > drat)
 dplyr::filter(mtcars, wt > 4)
 ```
 
-However, when we use an engine to parse code built from an instruction set we might wish to use non-standard evaluation.  Unfortunately we cannot use a single approach for both column names and scalar values as `!!sym(column)` is valid but `!!sum(value)` is not.
+However, when we use an engine to parse code built from an instruction set we might wish to use non-standard evaluation.  Unfortunately we cannot use a single approach for both column names and scalar values as `!!sym(column)` is valid but `!!sym(value)` is not.
 
 ```{r}
+#| error: true
+## This code works
 x1 <- 'wt'
 x2 <- 'drat'
-dplyr::filter(mtcars, !!rlang::sym(x1) > !!rlang::sym(x2))
-
+expr <- rlang::call2(">", rlang::sym(x1), rlang::sym(x2))
+dplyr::filter(mtcars, !!expr)
+```
+```{r}
+#| error: true
+## This code fails
 x1 <- 'wt'
 x2 <- 4
-# dplyr::filter(mtcars, !!rlang::sym(x1) > !!rlang::sym(x2))
-# Error in `rlang::sym()`:
-# ! Can't convert a double vector to a symbol.
-dplyr::filter(mtcars, !!rlang::sym(x1) > x2)
+expr <- rlang::call2(">", rlang::sym(x1), rlang::sym(x2))
+```
+
+```{r}
+#| error: true
+## This code works
+x1 <- 'wt'
+x2 <- 4
+expr <- rlang::call2(">", rlang::sym(x1), x2)
+dplyr::filter(mtcars, !!expr)
 ```
 
 A solution is to check if `value` is a column name and respond accordingly.  A simple example is shown below.  Bear in mind that the logic may need to be a little more complex than shown here.
@@ -381,19 +434,17 @@ jsonlite::write_json(list(filter_steps=list(list(col="cyl", operator=">", value=
 
 ```{r}
 #| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 data <- mtcars
 for (step in inp$filter_steps) {
-  if (step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
-    if (step$value %in% names(data)) {
-      ## value is the name of a column
-      data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), !!rlang::sym(step$value)))
-    } else {
-      ## value is not the name of a column
-      data <- data |> dplyr::filter(match.fun(step$operator)(!!rlang::sym(step$col), step$value))
-    }
-  } else if (step$operator == "in") {
-    data <- data |> dplyr::filter(!!rlang::sym(step$col) %in% unlist(step$value))
+  if (step$value %in% names(data)) {
+    ## value is the name of a column
+    expr <- rlang::call2(operators[[step$operator]], rlang::sym(step$col), rlang::sym(step$value))
+  } else {
+    ## value is not the name of a column
+    expr <- rlang::call2(operators[[step$operator]], rlang::sym(step$col), unlist(step$value))
   }
+  data <- dplyr::filter(data, !!expr)
 }
 print(data)
 ```
@@ -407,7 +458,7 @@ Our engine can be expanded to import and process data.  Using concepts from @sec
 {
   "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv",
   "columns": ["ref", "cocoa_percent", "rating"],
-  "filter_step:" {
+  "filter_step": {
     "col": "cocoa_percent",
     "operator": ">",
     "value": 85
@@ -435,22 +486,27 @@ if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
   data <- NULL
 }
 if (!is.null(inp$filter_step)) {
-  if (inp$filter_step$operator %in% c("==", ">", "<", ">=", "<=", "!=")) {
-    data <- data |> dplyr::filter(match.fun(inp$filter_step$operator)(!!rlang::sym(inp$filter_step$col), inp$filter_step$value))
-  } else if (inp$filter_step$operator == "in") {
-    data <- data |> dplyr::filter(!!rlang::sym(inp$filter_step$col) %in% unlist(inp$filter_step$value))
-  }
+  expr <- rlang::call2(operators[[inp$filter_step$operator]], rlang::sym(inp$filter_step$col), unlist(inp$filter_step$value))
+  data <- dplyr::filter(data, !!expr)
 }
 print(data)
 ```
 
 ## Mutate Step
 
-Building a mutate step is slightly different to a filter step and requires use of `:=` in place of `=`.  For example, in order to mimic the mutate step `dplyr::mutate(mtcars, my_new_column = 3)` we could use an instruction set and engine as follows:
+Building a mutate step is slightly different to a filter step and requires use of `:=` in place of `=`.  For mutate we will be building expressions as opposed to strings and `eval(parse())` should be avoided.
+
+::: {.callout-tip}
+`:=` is used in place of `=` to dynamically set a variable name.
+:::
+
+### Adding a New Column with a Constant Value
+
+This simple case illustrates how a column, holding a single constant value, may be added using a dplyr `mutate()` function.  In order to mimic the mutate step `dplyr::mutate(mtcars, new_col = 3)` we could use an instruction set and engine as follows:
 
 ```json
 {
-  "new_col_name": "my_new_column",
+  "new_col_name": "new_col",
   "value": 3
 }
 ```
@@ -458,13 +514,13 @@ Building a mutate step is slightly different to a filter step and requires use o
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(new_col_name="my_new_column", value=3), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(new_col_name="new_col", value=3), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::mutate(mtcars, !!inp$new_col_name  := inp$value)
+data <- dplyr::mutate(mtcars[1:10, 1:6], !!inp$new_col_name := inp$value)
 print(data)
 ```
 
@@ -473,13 +529,207 @@ Mutate can also be used with a glue-like syntax to pass column names as paramete
 ```{r}
 #| message: false
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::mutate(mtcars, "{inp$new_col_name}"  := inp$value)
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}"  := inp$value)
 print(data)
 ```
 
-### More Complex Mutate Functions
+### Creating a Column Based on Other Columns
 
-...
+The example below mimics the dplyr expression `dplyr::mutate(mtcars, new_col = wt/hp)`.  Our instruction set and engine could look like:
+
+```json
+{
+  "new_col_name": "new_col",
+  "operator": "/",
+  "lhs": "wt",
+  "rhs": "hp"
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(new_col_name="new_col", operator="/", lhs="wt", rhs="hp"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::call2(inp$operator, rlang::sym(inp$lhs), rlang::sym(inp$rhs))
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
+print(data)
+```
+
+Here we use `rlang::call2()` to construct the mutate expression.
+
+### Combining a Column with a Value
+
+The example below mimics the dplyr expression `dplyr::mutate(mtcars, new_col = wt + 1)`.  Our instruction set and engine could look like:
+
+```json
+{
+  "new_col_name": "new_col",
+  "operator": "+",
+  "lhs": "wt",
+  "rhs": 1
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs="wt", rhs=1), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::call2(inp$operator, rlang::sym(inp$lhs), inp$rhs)
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
+print(data)
+```
+
+This example illustrates a similar issue explored in @sec-combining-values-and-column-names, namely two approaches are necessary when using column names and values.
+
+### Multiple Steps
+
+So far we have seen fairly simple mutate functions.  What if we wish to build something that combines some of these approaches.  For example, how would we build a generalized solution that could cope with `new_col = mpg * cyl + 5`?  We already know we have to treat values and column names differently, and that we wish to avoid parsing the entire expression.
+
+From a conceptual point of view, it helps to work backwards from the `dplyr::mutate()` expression through the `rlang::call2()` expression and finally to the JSON format.  We'll then construct a generalized approach.
+
+The `dplyr::mutate()` expression `mpg * cyl + 5` can be expressed as
+
+```
+"+"(
+  "*"(
+    mpg,
+    cyl
+  ),
+  5
+)
+```
+
+which, built using `rlang::call2()` would look like:
+
+```{r}
+#| eval: false
+expr <- rlang::call2("+", rlang::call2("*", rlang::sym("mpg"), rlang::sym("cyl"), 5))
+```
+
+To include this in a JSON expression, we can consider recursively breaking the entire expression into smaller and smaller expressions comprising of an operator, a left-hand side and a right-hand side.  As an instruction set this could look like:
+
+```json
+{
+  "new_col_name": "new_col",
+  "operator": "+",
+  "lhs": {
+    "operator": "*",
+    "lhs": "mpg",
+    "rhs": "cyl"
+  },
+  "rhs": 5
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs="mpg", rhs="cyl"), rhs=5), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+build_expr <- function(x, col_names = c()) {
+
+  if (
+    is.character(x) && 
+    length(x) == 1 && 
+    x %in% col_names
+  ) {
+    return(rlang::sym(x))
+  }
+
+  if (
+    is.atomic(x) && 
+    length(x) == 1
+  ) {
+    return(x)
+  }
+
+  rlang::call2(x$operator,
+    build_expr(x$lhs, col_names),
+    build_expr(x$rhs, col_names)
+  )
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+expr <- build_expr(inp, names(mtcars))
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
+print(data)
+```
+
+The solution contains a recursive function which keeps calling itself on the left and right hand side operations until they result in a column name or value.
+
+This method is not fool-proof and works for simple, general cases.  Ideally, the logic should be constructed so that anything representing a *name* is returned as a symbol and anything else should be returned as a literal.  In order to achieve this we need to know when a string is a *name* and when it is a string.  For example - it would be impossible for this code to determine if "mpg" refers to the column called mpg or a string "mpg".  One solution would be to specify in the JSON format itself, for example:
+
+```json
+{
+  "new_col_name": "new_col",
+  "operator": "+",
+  "lhs": {
+    "operator": "*",
+    "lhs": {
+      "type": "column",
+      "value": "mpg"
+    },
+    "rhs": {
+      "type": "column",
+      "value": "cyl"
+    }
+  },
+  "rhs": {
+    "type": "literal",
+    "value": 5
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs=list(type="column", value="mpg"), rhs=list(type="column", value="cyl")), rhs=list(type="literal", value=5)), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+build_expr <- function(x, col_names = c()) {
+
+  if (!is.null(x[["type"]])) {
+    if (x[["type"]] == "column") {
+      return(rlang::sym(x[["value"]]))
+    }
+    if (x[["type"]] == "literal") {
+      return(x[["value"]])
+    }
+  }
+
+  rlang::call2(
+    x$operator,
+    build_expr(x$lhs, col_names),
+    build_expr(x$rhs, col_names)
+  )
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+expr <- build_expr(inp, names(mtcars))
+data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
+print(data)
+```
+
+
+
 
 ### Combining Data Import with a Mutate Step
 

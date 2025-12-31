@@ -255,7 +255,7 @@ data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
 
-#### Mapping
+#### Mapping {#sec-filter-mapping}
 
 This can be further generalized by mapping operators, building a 1:1 mapping from the operator name to the function.
 
@@ -450,7 +450,7 @@ print(data)
 ```
 
 
-### Combining Data Import with a Filter Data Step
+### Combining Data Import with a Filter Data Step {#sec-filter-data-import}
 
 Our engine can be expanded to import and process data.  Using concepts from @sec-importing-data, Our instruction set and engine can be extended as follows:
 
@@ -740,12 +740,94 @@ data <- dplyr::mutate(mtcars[1:10, 1:6], "{inp$new_col_name}" := !!expr)
 print(data)
 ```
 
+### Mapping
 
+We can use mapping for `mutate()` steps, in a similar manner to @sec-filter-mapping.  For mutate, our mapping function could look like:
 
+```{r}
+operators <- c(
+  "+" = "+",
+  "-" = "-",
+  "*" = "*",
+  "/" = "/",
+  "log" = "log",
+  "sqrt" = "sqrt"
+)
+```
+
+and a similar lookup such as:
+
+```{r}
+#| eval: false
+expr <- rlang::call2(operators[[inp$operator]], rlang::sym(inp$lhs), inp$rhs)
+```
+
+can be used for evaluation.
 
 ### Combining Data Import with a Mutate Step
 
-...
+Our engine can be expanded to import and process data.  Building on @sec-filter-data-import, our instruction set and engine can be extended as follows:
+
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv",
+  "columns": ["ref", "cocoa_percent", "rating"],
+  "filter_step": {
+    "col": "cocoa_percent",
+    "operator": ">",
+    "value": 85
+  },
+  "mutate_step": {
+    "new_col_name": "rating_percent",
+    "operator": "*",
+    "lhs": {
+      "type": "column",
+      "value": "rating"
+    },
+    "rhs": {
+      "type": "literal",
+      "value": 20
+    }
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-18/chocolate.csv", columns=list("ref", "cocoa_percent", "rating"), filter_step=list(col="cocoa_percent", operator=">", value=85), mutate_step=list(new_col_name="rating_percent", operator="*", lhs=list(type="column", value="rating"), rhs=list(type="literal", value=20))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: true
+
+## for simplicity, operator mapping used only in filter step
+operators <- c("==" = "==", ">" = ">", ">=" = ">=", "<" = "<", "<=" = "<=", "!=" = "!=", "in" = "%in%")
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+only_cols <- unlist(inp$columns)
+if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
+  data <- readr::read_csv(inp$dataset, col_select = only_cols)
+} else if (isTRUE(tools::file_ext(inp$dataset) == "sas")) {
+  data <- haven::read_sas(inp$dataset, col_select = only_cols)
+} else {
+  data <- NULL
+}
+
+if (!is.null(inp$filter_step)) {
+  expr <- rlang::call2(operators[[inp$filter_step$operator]], rlang::sym(inp$filter_step$col), unlist(inp$filter_step$value))
+  data <- dplyr::filter(data, !!expr)
+}
+
+if (!is.null(inp$mutate_step)) {
+  expr <- build_expr(inp$mutate_step, inp$columns)
+  data <- dplyr::mutate(data, "{inp$mutate_step$new_col_name}" := !!expr)
+}
+
+print(data)
+```
 
 ## Arrange Step
 

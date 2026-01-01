@@ -117,7 +117,7 @@ if (!is.null(inp$variables)) {
 print(inp)
 ```
 
-#### Extending to Multiple Replacements
+#### Extending to Multiple Replacements {#sec-variable-multiple}
 
 The example in @sec-variable-simple demonstrated a simple case of variable parsing but how can this work in a more generalized approach when the JSON structure we wish to process is more complex.  One way to tackle this is to use `purrr::modify_tree()` which modifies the contents of a nested list.  An example if its use for variable parsing is shown below.
 
@@ -200,4 +200,63 @@ We apply `purrr::modify_tree()` to `contents` in order to perform variable subst
     - If the element is not a list then it must be a leaf value, eg a string or numeric.  In this case `gsub` is used to replace any occurrence of the variable with its value.
 
 This process is repeated for each variable, so that all placeholders, no matter how deeply nested, will be replaced with their corresponding values.  Once complete, `contents` holds the updated list with the original structure.
+
+#### Extending to Different Types of Data
+
+The concept of variables can be extended to account for different types of data.  The approach in @sec-variable-multiple works well for strings but fails in the cases of numeric, boolean and vectors.  To extend for numerics and booleans we cannot use `gsub()` and have to check for equivalence as shown in the example that follows:
+
+```json
+{
+    "variables": {
+        "myVar1": true,
+        "myVar2": 55
+    },
+    "contents": {
+        "val1" : "$myVar1$",
+        "val2" : "$myVar2$"
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1=TRUE, myVar2=55), contents=list(val1="$myVar1$", val2="$myVar2$")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+contents <- inp$contents
+
+for (v in names(inp$variables)) {
+  var_name <- paste0("$", v, "$")
+  var_value <- inp$variables[[v]]
+  contents <- purrr::modify_tree(
+    contents, 
+    leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else if (is.character(var_value)) {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      } else if (identical(x, var_name)) {
+        var_value
+      } else {
+        x
+      }
+    }
+  )
+}
+
+print(jsonlite::toJSON(contents, auto_unbox = TRUE, pretty = TRUE))
+```
+
+The `modify_tree()` function now runs through the following checks:
+
+-  If `x` is a list then return `x` (`x` is a node, not a leaf).
+-  If `x` is a character vector then attempt to substitute the variable.
+-  If `x` is not a character vector but is identical to a variable name, replace it with the variable value.
+-  Otherwise return `x`.
+
+This approach works when direct replacement is all that is required (eg replacing `$myVar2` with `55`).  It will not work when a variable is used in an expression (eg `$myVar2$ + 10`).
+
 

@@ -1,0 +1,203 @@
+# Advanced Instructions
+
+Both JSON and YAML are suitable formats for passing instructions to an engine but each have their limitations.  This section describes how the engine itself can be used to extend the scope of JSON and YAML.  Concepts of variables, loops, etc will be discussed for both JSON and YAML, and demonstrated for JSON, although the same concepts apply to YAML.
+
+## Variables
+
+### Variables in Pure JSON and YAML
+
+JSON does not have a concept of variables or variable reuse.  YAML does include anchors (&) and aliases (*) which allow for reuse.  For example, in YAML the following is permitted:
+
+```yaml
+threshold: &thresh 30
+
+filters:
+  - col: mpg
+    operator: ">"
+    value: *thresh
+```
+
+`&thresh` defines an anchor and `*thresh` reuses that value.  There are limitations to how anchors and aliases are used.  They are pure substitution, not symbolic evaluation, meaning that the following is not valid:
+
+```yaml
+threshold: &thresh 30
+max_threshold: *thresh + 10
+```
+
+### Building a Variable Parser
+
+#### Simple Case {#sec-variable-simple}
+
+To encode variables in JSON format, consider the following:
+
+```json
+{
+    "variables": {
+        "myVar1": 1,
+        "myVar2": "Hello"
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1=1, myVar2="Hello")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+When imported into R, this JSON file appears as:
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+inp
+```
+
+The variables listed under `variables` in the JSON file are available through inp$variables$name where `name` is the name of a variable.
+
+Now all we need is a method to replace a variable name with the value of the variable.  This can be achieved by defining a syntax for variables.  For example, in the case below we define variable use as `$name$` where `name` is the name of a variable.  Here `subValue` is set to be equal to the variable `myVar2` by defining it as `$myVar2$`.
+
+```json
+{
+    "variables": {
+        "myVar1": "Hello",
+        "myVar2": "World"
+    },
+    "subValue": "$myVar1$"
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1="Hello", myVar2="World"), subValue="$myVar1$"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+Finally, the engine requires a method to replace variables in the JSON prior to the JSON contents being interpreted and processed.
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (!is.null(inp$variables)) {
+  for (v in names(inp$variables)) {
+    var_name <- paste0("$", v, "$")
+    var_value <- inp$variables[[v]]
+    inp$subValue <- gsub(var_name, var_value, inp$subValue, fixed = TRUE)
+  }
+}
+print(inp)
+```
+
+Since we are simply replacing text with values, variables can be placed as needed.  For example:
+
+
+```json
+{
+    "variables": {
+        "myVar1": "Hello",
+        "myVar2": "World"
+    },
+    "subValue": "$myVar1$ there"
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1="Hello", myVar2="World"), subValue="$myVar1$ there"), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+if (!is.null(inp$variables)) {
+  for (v in names(inp$variables)) {
+    var_name <- paste0("$", v, "$")
+    var_value <- inp$variables[[v]]
+    inp$subValue <- gsub(var_name, var_value, inp$subValue, fixed = TRUE)
+  }
+}
+print(inp)
+```
+
+#### Extending to Multiple Replacements
+
+The example in @sec-variable-simple demonstrated a simple case of variable parsing but how can this work in a more generalized approach when the JSON structure we wish to process is more complex.  One way to tackle this is to use `purrr::modify_tree()` which modifies the contents of a nested list.  An example if its use for variable parsing is shown below.
+
+::: {.callout-tip}
+`purrr::modify_tree(.x, .f)` recursively walks through a nested list `.x`, applying the function, `.f`, to every element in the tree, and returns a new list with the same structure.
+:::
+
+```json
+{
+    "variables": {
+        "myVar1": "Hello",
+        "myVar2": "World"
+    },
+    "contents": {
+        "val1" : "$myVar1$ there",
+        "val2" : "$myVar2$",
+        "val3": {
+            "val4": {
+                "nested": "data",
+                "nested_var": "$myVar1$ $myVar2$"
+            },
+            "val5": [
+                "Regular text",
+                "$myVar1$ $myVar2$"
+            ]
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1="Hello", myVar2="World"), contents=list(val1="$myVar1$ there", val2="$myVar2$", val3=list(val4=list(nested="data", nested_var="$myVar1$ $myVar2$"), val5=list("Regular text", "$myVar1$ $myVar2$")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+contents <- inp$contents
+
+for (v in names(inp$variables)) {
+  var_name <- paste0("$", v, "$")
+  var_value <- inp$variables[[v]]
+  contents <- purrr::modify_tree(
+    contents, 
+    leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      }
+    }
+  )
+}
+
+print(jsonlite::toJSON(contents, auto_unbox = TRUE, pretty = TRUE))
+```
+
+Let's unpack what's happening.  `contents` can be considered as a tree, containing both nodes (branches that contain other elements) and leaves (values that sit at the end of branches), such that:
+
+```
+contents                                    (node)
+├─ val1 : "$myVar1$ there"                  (leaf)
+├─ val2 : "$myVar2$"                        (leaf)
+└─ val3                                     (node)
+   ├─ val4                                  (node)
+   │  ├─ nested      : "data"               (leaf)
+   │  └─ nested_var  : "$myVar1$ $myVar2$"  (leaf)
+   └─ val5                                  (node)
+      ├─ [1] "Regular text"                 (leaf)
+      └─ [2] "$myVar1$ $myVar2$"            (leaf)
+```
+
+We apply `purrr::modify_tree()` to `contents` in order to perform variable substitution within a deeply nested JSON structure.  The loop iterates over each entry in `inp$variables` and for each variable the following is performed:
+
+1. the variable name is converted into a placeholder, eg `myVar1` becomes `$myVar1$`.
+2. The corresponding replacement value is retrieved, eg `Hello`.
+3. Within `modify_tree()`:
+    - If the element is a list then it represents an internal node of the tree so simply return it unchanged.
+    - If the element is not a list then it must be a leaf value, eg a string or numeric.  In this case `gsub` is used to replace any occurrence of the variable with its value.
+
+This process is repeated for each variable, so that all placeholders, no matter how deeply nested, will be replaced with their corresponding values.  Once complete, `contents` holds the updated list with the original structure.
+

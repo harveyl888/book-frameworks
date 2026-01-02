@@ -259,4 +259,126 @@ The `modify_tree()` function now runs through the following checks:
 
 This approach works when direct replacement is all that is required (eg replacing `$myVar2` with `55`).  It will not work when a variable is used in an expression (eg `$myVar2$ + 10`).
 
+## Loops
 
+### Loops in Pure JSON and YAML
+
+Neither JSON or YAML support loops and therefore looping has to be built as a preprocessing layer in the engine.
+
+### Looping Over Values
+
+A simple looping strategy can be built into the engine as follows:
+
+```json
+{
+    "loop": {
+        "variable": "$l1$",
+        "values": [1, 2, 3]
+    },
+    "content": {
+        "val1": "$l1$",
+        "val2": "Hello"
+    }
+}
+```
+
+and executed as follows:
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(loop=list(variable="$l1$", values=list(1,2,3)), content=list(val1="$l1$", val2="Hello")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+result <- list()
+if (!is.null(inp$loop)) {
+  var_name <- inp$loop$variable
+  for (l in inp$loop$values) {
+    var_value <- l
+    loop_result <- purrr::modify_tree(inp$content, leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      }
+    })
+    result <- append(result, list(loop_result))
+  }
+}
+print(result)
+```
+
+### Nested Loops
+
+A more generic approach can be achieved by using `expand.grid()` to hold loop values.  Ann advantage of this approach is that nested loops can readily be constructed.  Take the example below with two loops:
+
+```json
+{
+    "loop": [
+        {
+            "variable": "$loop1$", 
+            "values": [1, 2, 3]
+        },
+        {
+            "variable": "$loop2$", 
+            "values": ["Alice", "Bob"]
+        }
+    ],        
+    "content": {
+        "val1": "$loop1$",
+        "val2": "Hello $loop2$"
+    }
+}
+```
+
+Construction the engine using `expand.grid()` to build a data frame of all loop combinations and then running through them one by one is relatively simple:
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(loop=list(list(variable="$loop1$", values=list(1,2,3)), list(variable="$loop2$", values=list("Alice","Bob"))), content=list(val1="$loop1$", val2="Hello $loop2$")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+result <- list()
+
+## list of all loop values and loop variable names
+loops <- purrr::map(inp$loop, \(x) x$values) |>
+    purrr::set_names(purrr::map_chr(inp$loop, \(x) x$variable))
+
+## use expand.grid to build a data frame where each row contains a series of loop values
+df_loops <- expand.grid(rev(loops), KEEP.OUT.ATTRS = FALSE)
+
+## reconstruct a list with one entry for each series of loop values
+l_loops <- split(df_loops, 1:nrow(df_loops))
+
+for (loop_set in l_loops) {
+  loop_updated <- inp$content
+  for (loop_count in seq_along(loop_set)) {
+    var_name <- names(loop_set)[loop_count]
+    var_value <- loop_set[[loop_count]]
+
+    loop_updated <- purrr::modify_tree(loop_updated, leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      }
+    })
+  }
+  result <- append(result, list(loop_updated))
+}
+
+print(result)
+```
+
+The data frame `df_loops` looks as follows:
+
+```{r}
+df_loops
+```

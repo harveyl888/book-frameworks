@@ -11,6 +11,7 @@ book:
     - instructions.qmd
     - importing_data.qmd
     - data_wrangling.qmd
+    - advanced_instructions.qmd
     - shiny_interface.qmd
     - shiny_reactivity.qmd
 

@@ -311,7 +311,7 @@ if (!is.null(inp$loop)) {
 print(result)
 ```
 
-### Nested Loops
+### Nested Loops (#sec-loops-nested)
 
 A more generic approach can be achieved by using `expand.grid()` to hold loop values.  Ann advantage of this approach is that nested loops can readily be constructed.  Take the example below with two loops:
 
@@ -382,3 +382,163 @@ The data frame `df_loops` looks as follows:
 ```{r}
 df_loops
 ```
+
+### Building Loops from Variables
+
+Using variables to build loops is a powerful construct since an entire output can be updated by simply changing the values in a variable or pointing to a different one.  We can achieve it by using two passes - one to identify and substitute variable values and one to build the loops.  The example below follows the same code as @sec-loops-nested but replaces *Alice* and *Bob* in `$loop2` values with a variables (`$people$`) that points to *Alice* and *Bob*.  Code explanation will follow the example.
+
+```json
+{
+    "variables": {
+        "people": ["Alice", "Bob"]
+    },
+    "loop": [
+        {
+            "variable": "$loop1$", 
+            "values": [1, 2, 3]
+        },
+        {
+            "variable": "$loop2$", 
+            "values": "$people$"
+        }
+    ],        
+    "content": {
+        "val1": "$loop1$",
+        "val2": "Hello $loop2$"
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(people=list("Alice","Bob")), loop=list(list(variable="$loop1$", values=list(1,2,3)), list(variable="$loop2$", values="$people$")), content=list(val1="$loop1$", val2="Hello $loop2$")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## parse variables
+inp_var_replace <- inp
+
+for (v in names(inp$variables)) {
+  var_name <- paste0("$", v, "$")
+  var_value <- inp$variables[[v]]
+  inp_var_replace <- purrr::modify_tree(
+    inp_var_replace, 
+    leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else if (is.character(var_value)) {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      } else if (identical(x, var_name)) {
+        var_value
+      } else {
+        x
+      }
+    }
+  )
+}
+
+## execute loops
+result <- list()
+loops <- purrr::map(inp_var_replace$loop, \(x) x$values) |>
+    purrr::set_names(purrr::map_chr(inp_var_replace$loop, \(x) x$variable))
+df_loops <- expand.grid(rev(loops), KEEP.OUT.ATTRS = FALSE)
+l_loops <- split(df_loops, 1:nrow(df_loops))
+
+
+for (loop_set in l_loops) {
+  loop_updated <- inp_var_replace$content
+  for (loop_count in seq_along(loop_set)) {
+    var_name <- names(loop_set)[loop_count]
+    var_value <- loop_set[[loop_count]]
+
+    loop_updated <- purrr::modify_tree(loop_updated, leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      }
+    })
+  }
+  result <- append(result, list(loop_updated))
+}
+
+print(result)
+```
+
+We can split the code into two sections: replacing variables and running loops.  The initial json input looks like this:
+
+```json
+{
+    "variables": {
+        "people": ["Alice", "Bob"]
+    },
+    "loop": [
+        {
+            "variable": "$loop1$", 
+            "values": [1, 2, 3]
+        },
+        {
+            "variable": "$loop2$", 
+            "values": "$people$"
+        }
+    ],        
+    "content": {
+        "val1": "$loop1$",
+        "val2": "Hello $loop2$"
+    }
+}
+```
+
+The loop variable `$loop2$` points to a variable, `$people$` which holds the values *Alice* and *Bob*.  When we run the initial part of the code (*parse variables*) we generate a new version of *inp* called *inp_var_replace* in which any variable used in inp$variables is replaced with its value.  Since we have converted the JSON format to a list in R, we can readily replace a variable name with a list of values.  The code snippet is shown below, followed by the resulting *inp_var_replace*, shown in JSON format for comparison to the original.
+
+```{r}
+#| eval: false
+## parse variables
+inp_var_replace <- inp
+
+for (v in names(inp$variables)) {
+  var_name <- paste0("$", v, "$")
+  var_value <- inp$variables[[v]]
+  inp_var_replace <- purrr::modify_tree(
+    inp_var_replace, 
+    leaf = \(x) {
+      if (is.list(x)) {
+        x
+      } else if (is.character(var_value)) {
+        gsub(var_name, var_value, x, fixed = TRUE)
+      } else if (identical(x, var_name)) {
+        var_value
+      } else {
+        x
+      }
+    }
+  )
+}
+```
+
+```json
+{
+    "variables": {
+        "people": ["Alice", "Bob"]
+    },
+    "loop": [
+        {
+            "variable": "$loop1$", 
+            "values": [1, 2, 3]
+        },
+        {
+            "variable": "$loop2$", 
+            "values": ["Alice", "Bob"]
+        }
+    ],        
+    "content": {
+        "val1": "$loop1$",
+        "val2": "Hello $loop2$"
+    }
+}
+```
+
+When the second part of the code (*execute loops*) is run, the loop values of *Alice* and *Bob* are used for loop variable `$loop2$` producing the desired output.  By simply changing the values in `$people$`, the output can be affected without having to change values in individual loops.  This can be especially effective when the variable contents are looped over multiple times.

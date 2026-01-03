@@ -116,8 +116,147 @@ Note that when using the dplyr::filter() function we can take advantage of the `
 
 :::{.callout-warning}
 ## Important
-Such approaches are simplistic to build but open to abuse.  Parsing raw commands through an engine can often lead to undesired effects and should be avoided where possible.  An alternative approach is to break down the data wrangling steps 
+Such approaches are simplistic to build but open to abuse.  Parsing raw commands through an engine can often lead to undesired effects and should be avoided where possible.  An alternative approach is to break down the data wrangling steps.
 :::
+
+## Select Step
+
+A select step is relatively simple to implement since `dplyr::select()` operates on names.  A simple example of a JSON input and engine for column selection is shown below.
+
+```json
+{
+  "cols": ["mpg", "cyl", "wt"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!rlang::syms(inp$cols))
+print(data)
+```
+
+Note the use of `!!!` in the expression `!!!rlang::syms()` as we are working with a vector of arguments in `syms()`.  In the code above, the expression
+```{r}
+#| eval: false
+dplyr::select(mtcars, !!!rlang::syms(inp$cols))
+```
+
+is equivalent to writing
+
+```{r}
+#| eval: false
+dplyr::select(mtcars, mpg, cyl, wt)
+```
+
+To remove columns we can build an expressions using `rlang::call2()` as follows: `rlang::call2("-", rlang::sym(col_name))`.  This creates the expression `-colname` which can be inserted into `dplyr::select()`.  For multiple columns we simply create a list and use `!!!` as follows:
+
+```json
+{
+  "drop_cols": ["mpg", "cyl", "wt"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(drop_cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- lapply(inp$drop_cols, function(x) {
+  rlang::call2("-", rlang::sym(x))
+})
+data <- dplyr::select(mtcars, !!!expr)
+print(data)
+```
+
+`expr` is as follows:
+
+```{r}
+print(expr)
+```
+
+and `dplyr::select(mtcars, !!!expr)` equates to `dplyr::select(mtcars, -mpg, -cyl, -wt)`.
+
+## Rename Step
+
+Rename also works on names and renaming a single column is demonstrated below.
+
+```json
+{
+  "rename": {
+    "old_name": "mpg",
+    "new_name": "miles_per_gallon"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(rename=list(old_name="mpg", new_name="miles_per_gallon")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::set_names(list(rlang::sym(inp$rename$old_name)), inp$rename$new_name)
+data <- dplyr::rename(mtcars[1:10, 1:6], !!!expr)
+print(data)
+```
+
+Here, we use `rlang::set_names()` to build a named list and pass it as an expression to `dplyr::rename()`.  Since `expr` is a list, `!!!` is used in place of `!!`, even though the list only has one member.
+
+The same concept can be used when extending to multiple columns.
+
+```json
+{
+  "rename": {
+    "mpg": "miles_per_gallon",
+    "cyl": "cylinders",
+    "wt": "weight"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(rename=list(mpg="miles_per_gallon", cyl="cylinders", wt="weight")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::set_names(
+  lapply(names(inp$rename), rlang::sym),
+  unname(inp$rename)
+)
+data <- dplyr::rename(mtcars[1:10, 1:6], !!!expr)
+print(data)
+```
+
+```{r}
+#| eval: false
+dplyr::select(mtcars[1:10, 1:6], !!!expr))
+```
+
+is equivalent to writing
+
+```{r}
+#| eval: false
+dplyr::rename(mtcars[1:10, 1:6], miles_per_gallon = mpg, cylinders = cyl, weight = wt)
+```
+
 
 ## Filter Step
 

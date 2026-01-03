@@ -311,7 +311,7 @@ if (!is.null(inp$loop)) {
 print(result)
 ```
 
-### Nested Loops (#sec-loops-nested)
+### Nested Loops {#sec-loops-nested}
 
 A more generic approach can be achieved by using `expand.grid()` to hold loop values.  Ann advantage of this approach is that nested loops can readily be constructed.  Take the example below with two loops:
 

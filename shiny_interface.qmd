@@ -6,13 +6,13 @@ In addition to working with data, a framework can be used to construct an interf
 
 ## A Minimal Example - Interpreting a Single widget
 
-It's fairly straightforward to build a shiny widget programatically.  A traditional approach to including a widget, for example a `textInput` control, is:
+It's fairly straightforward to build a shiny widget programmatically.  A traditional approach to including a widget, for example a `textInput` control, is:
 
 ```r
 textInput(inputId = "my_textinput_id", label = "my_textinput_label")
 ```
 
-From a programatic perspective, we can generate the textInput control using just an id and label.  Our instruction set can be as simple as the following:
+From a programmatic perspective, we can generate the textInput control using just an id and label.  Our instruction set can be as simple as the following:
 
 ```json
 {
@@ -45,7 +45,7 @@ shinyApp(ui, server)
 
 ![](images/shiny_interface_01.png)
 
-## Example - Buidling Multiple Widgets
+## Example - Building Multiple Widgets
 
 As a simple example, let's build a set of textInputs using the approach.  The instruction set would look something like:
 

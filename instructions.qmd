@@ -99,7 +99,7 @@ pets:
   number_pets: 3
 ```
 
-Arrays can be specified using a hyphen and space as folows:
+Arrays can be specified using a hyphen and space as follows:
 
 ```yaml
 name: Joe Bloggs
@@ -116,7 +116,7 @@ pets:
 
 ### Using the {yaml} R Package
 
-{yaml} can read in and convert a YAML file to an R list.  To convert the YAML above to a list use `yaml::yaml.load()` as folllows:
+{yaml} can read in and convert a YAML file to an R list.  To convert the YAML above to a list use `yaml::yaml.load()` as follows:
 
 ```{r}
 yaml_string <- "

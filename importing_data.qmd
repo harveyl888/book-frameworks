@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Importing data is a fundemental step for a data processing framework.  It's also quite simple due to the many functions in base R and R packages available for importing.  In this chapter we'll explore how an R-based framework can be used to import data.
+Importing data is a fundamental step for a data processing framework.  It's also quite simple due to the many functions in base R and R packages available for importing.  In this chapter we'll explore how an R-based framework can be used to import data.
 
 ## A Simple Example
 

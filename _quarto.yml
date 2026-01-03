@@ -7,13 +7,23 @@ book:
   date: "12/21/2023"
   chapters:
     - index.qmd
-    - introduction.qmd
-    - instructions.qmd
-    - importing_data.qmd
-    - data_wrangling.qmd
-    - advanced_instructions.qmd
-    - shiny_interface.qmd
-    - shiny_reactivity.qmd
+    - part: "Introduction"
+      chapters:
+      - introduction.qmd
+      - instructions.qmd
+    - part: "Working with Data"
+      chapters:
+      - importing_data.qmd
+    - part: "Data Wrangling"
+      chapters:
+      - data_wrangling-introduction.qmd
+      - data_wrangling-selection-and-ordering.qmd
+      - data_wrangling-transformation.qmd
+      - advanced_instructions.qmd
+    - part: "Shiny"
+      chapters:
+      - shiny_interface.qmd
+      - shiny_reactivity.qmd
 
 format:
   html:

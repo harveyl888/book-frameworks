@@ -1,0 +1,252 @@
+# Selection and Ordering
+
+## Select Step
+
+A select step is relatively simple to implement since `dplyr::select()` operates on names.  A simple example of a JSON input and engine for column selection is shown below.
+
+```json
+{
+  "cols": ["mpg", "cyl", "wt"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!rlang::syms(inp$cols))
+print(data)
+```
+
+Note the use of `!!!` in the expression `!!!rlang::syms()` as we are working with a vector of arguments in `syms()`.  In the code above, the expression
+```{r}
+#| eval: false
+dplyr::select(mtcars, !!!rlang::syms(inp$cols))
+```
+
+is equivalent to writing
+
+```{r}
+#| eval: false
+dplyr::select(mtcars, mpg, cyl, wt)
+```
+
+To remove columns we can build an expressions using `rlang::call2()` as follows: `rlang::call2("-", rlang::sym(col_name))`.  This creates the expression `-colname` which can be inserted into `dplyr::select()`.  For multiple columns we simply create a list and use `!!!` as follows:
+
+```json
+{
+  "drop_cols": ["mpg", "cyl", "wt"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(drop_cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- lapply(inp$drop_cols, function(x) {
+  rlang::call2("-", rlang::sym(x))
+})
+data <- dplyr::select(mtcars, !!!expr)
+print(data)
+```
+
+`expr` is as follows:
+
+```{r}
+print(expr)
+```
+
+and `dplyr::select(mtcars, !!!expr)` equates to `dplyr::select(mtcars, -mpg, -cyl, -wt)`.
+
+## Rename Step
+
+Rename also works on names and renaming a single column is demonstrated below.
+
+```json
+{
+  "rename": {
+    "old_name": "mpg",
+    "new_name": "miles_per_gallon"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(rename=list(old_name="mpg", new_name="miles_per_gallon")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::set_names(list(rlang::sym(inp$rename$old_name)), inp$rename$new_name)
+data <- dplyr::rename(mtcars[1:10, 1:6], !!!expr)
+print(data)
+```
+
+Here, we use `rlang::set_names()` to build a named list and pass it as an expression to `dplyr::rename()`.  Since `expr` is a list, `!!!` is used in place of `!!`, even though the list only has one member.
+
+The same concept can be used when extending to multiple columns.
+
+```json
+{
+  "rename": {
+    "mpg": "miles_per_gallon",
+    "cyl": "cylinders",
+    "wt": "weight"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(rename=list(mpg="miles_per_gallon", cyl="cylinders", wt="weight")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+expr <- rlang::set_names(
+  lapply(names(inp$rename), rlang::sym),
+  unname(inp$rename)
+)
+data <- dplyr::rename(mtcars[1:10, 1:6], !!!expr)
+print(data)
+```
+
+```{r}
+#| eval: false
+dplyr::select(mtcars[1:10, 1:6], !!!expr))
+```
+
+is equivalent to writing
+
+```{r}
+#| eval: false
+dplyr::rename(mtcars[1:10, 1:6], miles_per_gallon = mpg, cylinders = cyl, weight = wt)
+```
+
+`dplyr::arrange()` sorts columns in ascending or descending order.  It is a little more challenging to build a generic arrange step for two reasons: 
+
+  - All components must be included in a single `arrange()` function call and cannot be built up stepwise, unlike other dplyr functions, such as `filter()`.  In a stepwise manner, the first `arrange()` function call will be discarded for the second, the second for the third and so on.  Only the last `arrange()` function call would be honored.
+  - The use of the `desc()` function must be encoded in the process.  Since the `arrange()` step is not built up stepwise, use of `desc()` becomes a little more challenging.
+
+The instruction set and engine below illustrates how an arrange step, with multiple columns, can be built.
+
+```json
+[
+  {
+    "column": "gear",
+    "direction": "asc"
+  },
+  {
+    "column": "cyl",
+    "direction": "desc"
+  },
+  {
+    "column": "mpg"
+  }
+]
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(list(column = "gear", direction = "asc"), list(column = "cyl", direction = "desc"), list(column = "mpg")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+arrange_content <- purrr::map(inp, \(x) {
+  if (isTRUE(x[['direction']] == "desc")) {
+    rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+  } else { 
+    rlang::sym(x[['column']])
+  }
+})
+data <- dplyr::arrange(mtcars, !!!arrange_content)
+print(data)
+```
+
+
+So let's look at what is happening in the code above.  We run `purrr::map()` over each of the arrange parameters.  Inside the `map()` function we check to direction - *ascending* or *descending* with the default being *ascending*.  
+For *ascending* columns the column name is converted to a symbol and returned.  
+For *descending* columns, the column name is converted to a symbol and `rlang::call2()` is used to retun a function call to `dplyr::desc()` without executing the call.  
+The list returned by `purrr::map()` is then injected into `arrange()` using `!!!` which is the list equivalent of `!!`.
+
+The result of `arrange_content` is:
+
+```{r}
+#| echo: false
+arrange_content
+```
+
+### Combining Data Import with an Arrange Step
+
+Using concepts from @sec-importing-data, Our instruction set and engine can be extended to include an arrange step as follows:
+
+```json
+{
+  "dataset": "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv",
+  "columns": ["match_id", "score_team1", "score_team2", "wickets_team", "wickets_team2"],
+  "arrange_step:" [
+    {
+      "column": "wickets_team1"
+    },
+    {
+      "column": "wickets_team2"
+    },
+    {
+      "column": "score_team1",
+      "direction": "desc"
+    }
+  ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(dataset="https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-30/matches.csv", columns=list("match_id", "score_team1", "score_team2", "wickets_team1", "wickets_team2"), arrange_step=list(list(column = "wickets_team1"), list(column = "wickets_team2"), list(column = "score_team1", direction = "desc"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: true
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+only_cols <- unlist(inp$columns)
+if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
+  data <- readr::read_csv(inp$dataset, col_select = only_cols)
+} else if (isTRUE(tools::file_ext(inp$dataset) == "sas")) {
+  data <- haven::read_sas(inp$dataset, col_select = only_cols)
+} else {
+  data <- NULL
+}
+
+if (!is.null(inp$arrange_step)) {
+  arrange_content <- purrr::map(inp$arrange_step, \(x) {
+    if (isTRUE(x[['direction']] == "desc")) {
+      rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+    } else { 
+      rlang::sym(x[['column']])
+    }
+  })
+  data <- dplyr::arrange(data, !!!arrange_content)
+}
+print(data)
+```

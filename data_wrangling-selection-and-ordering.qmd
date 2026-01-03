@@ -68,6 +68,55 @@ print(expr)
 
 and `dplyr::select(mtcars, !!!expr)` equates to `dplyr::select(mtcars, -mpg, -cyl, -wt)`.
 
+## Distinct Step
+
+Distinct works in a similar manner to select.
+
+```json
+{
+  "distinct": ["gear", "carb"]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(distinct=list("carb", "gear")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::distinct(mtcars, !!!rlang::syms(inp$distinct))
+print(data)
+```
+
+Distinct identifies rows with unique values.  If more than one row is satisfied,it will return the first match.  It can return either selected columns, as demonstrated above, or, if argument `.keep_all=TRUE`, will return all columns.
+
+
+```json
+{
+  "distinct": {
+    "cols": ["gear", "carb"],
+    "keep_all": true
+  }
+  
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(distinct=list(cols=list("carb", "gear"), keep_all=TRUE)), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::distinct(mtcars, !!!rlang::syms(inp$distinct$cols), .keep_all = isTRUE(inp$distinct$keep_all))
+print(data)
+```
+
 ## Rename Step
 
 Rename also works on names and renaming a single column is demonstrated below.
@@ -138,6 +187,8 @@ is equivalent to writing
 dplyr::rename(mtcars[1:10, 1:6], miles_per_gallon = mpg, cylinders = cyl, weight = wt)
 ```
 
+## Arrange Step
+
 `dplyr::arrange()` sorts columns in ascending or descending order.  It is a little more challenging to build a generic arrange step for two reasons: 
 
   - All components must be included in a single `arrange()` function call and cannot be built up stepwise, unlike other dplyr functions, such as `filter()`.  In a stepwise manner, the first `arrange()` function call will be discarded for the second, the second for the third and so on.  Only the last `arrange()` function call would be honored.
@@ -173,7 +224,7 @@ inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 arrange_content <- purrr::map(inp, \(x) {
   if (isTRUE(x[['direction']] == "desc")) {
-    rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+    rlang::call2("desc", rlang::sym(x[['column']]))
   } else { 
     rlang::sym(x[['column']])
   }
@@ -241,7 +292,7 @@ if (isTRUE(tools::file_ext(inp$dataset) == "csv")) {
 if (!is.null(inp$arrange_step)) {
   arrange_content <- purrr::map(inp$arrange_step, \(x) {
     if (isTRUE(x[['direction']] == "desc")) {
-      rlang::call2("desc", rlang::sym(x[['column']]), .ns = "dplyr")
+      rlang::call2("desc", rlang::sym(x[['column']]))
     } else { 
       rlang::sym(x[['column']])
     }

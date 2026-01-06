@@ -1156,3 +1156,107 @@ data <- dplyr::mutate(mtcars, !!inp$new_col_name := !!expr)
 print(data)
 ```
 
+## Summarizing Data
+
+### `dplyr::summarize()`
+
+While `filter()` and `mutate()` operate at the row level, processing each row indeividually, `dplyr::summarize()` (or `dplyr::summarise()`) is used to reduce the number of rows by computing aggregate values.  Each summary expression combines multiple rows into a single value, producing one output row per group (or single row if no grouping is applied).
+
+### Grouping
+
+#### Grouping using `group_by()`
+
+The dplyr verb `group_by()` can be used to group rows by one or more variables.
+
+```{r}
+mtcars |>
+  dplyr::group_by(cyl) |>
+  dplyr::summarize(avg_mpg = mean(mpg))
+```
+
+Here `dplyr::group_by(cyl)` defines the groupoing metadata - data are grouped into matching values for **cyl**.  `dplyr::summarize()` evaluates the expression `avg_mpg = mean(mpg)` once per group and the result contains one row per value of **cyl**.  Grouping is persistent and the data remains grouped after summarization unless specifically dropped.
+
+#### Grouping using `.by`
+
+More recent versions of `dplyr` allow grouping to be specified within the `summarize()` verb directly by using the `.by` argument.
+
+```{r}
+mtcars |>
+  dplyr::summarize(avg_mpg = mean(mpg), .by = cyl)
+```
+
+The differs from the example that uses `group_by()` in that grouping only applies to this call and the input data are not permanently grouped.
+
+Both `.by` and `group_by()` support multiple columns.
+
+```{r}
+mtcars |>
+  dplyr::summarize(avg_mpg = mean(mpg), .by = c(cyl, gear))
+```
+
+### Simple Summary Step
+
+For a simple example, we will calculate the average mpg grouped by cyl and gear.
+
+```{r}
+dplyr::summarize(mtcars, avg_mpg = mean(mpg), .by = c(cyl, gear))
+```
+
+```json
+{
+  "summarize": {
+    "by": ["cyl", "gear"],
+    "metrics": {
+      "name": "avg_mpg",
+      "operator": "mean",
+      "column": "mpg"
+    }
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(summarize=list(by=list("cyl","gear"), metrics=list(name="avg_mean", operator="mean", column="mpg"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+As we construct the engine it's clear that we will be dynamically assigning a new column name, in a manner similar to `mutate()` and therefore a named list should be used.
+
+```{r}
+build_summarize <- function(x) {
+  setNames(
+    list(rlang::call2(x$operator, rlang::sym(x$column))),
+    x$name
+  )
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## summarize expression
+summarize_expr <- build_summarize(inp$summarize$metrics)
+
+## list of grouping columns
+by_expr <- rlang::syms(inp$summarize$by)
+
+data <- dplyr::summarize(mtcars, !!summarize_expr, .by = c(!!!by_expr))
+print(data)
+```
+
+In this implementation, the summarize expression is built using `build_summarize()`
+
+```{r}
+build_summarize(inp$summarize$metrics)
+```
+
+and the list of grouping columns is a list of syms
+
+```{r}
+rlang::syms(inp$summarize$by)
+```
+
+::: {.callout-tip}
+When passing to the `summarize()` function, the `.by` argument expects a single. object (eg a vector or list).  Using `!!!by_expr` alone would splice two arguments (cyl and gear).  Passing `c(!!!by_expr)` collects them into a single object.
+:::
+
+

@@ -857,16 +857,6 @@ data <- dplyr::mutate(mtcars, !!inp$mutate$new_col_name := inp$mutate$value)
 print(data)
 ```
 
-`dplyr::mutate()` can also be used with a glue-like syntax to pass column names as parameters.
-
-```{r}
-library(rlang)
-
-inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::mutate(mtcars, "{inp$mutate$new_col_name}" := inp$mutate$value)
-print(data)
-```
-
 When building a more generic `mutate()` step, one would think that we could use a similar syntax to `filter()`, ie construct an expression using an lefthand side, a righthand side and an operator, where the operator is `:=`.  Unfortunately, this code fails:
 
 ```{r}
@@ -905,12 +895,21 @@ Another approach is to use named lists.  When a named list is passed to dplyr it
 col <- "new_col"
 val <- 3
 expr <- setNames(list(rlang::expr(val)), col)
-## rhs is an expression to illustrate how this method can be utilized for more complex cases
+dplyr::mutate(mtcars, !!!expr)
+```
+
+Working with a named list is the preferred pattern when working with multiple programmatic columns:
+
+```{r}
+cols <- c("new_1", "new_2")
+vals <- c(rlang::expr(carb * 2), rlang::expr(cyl / 2))
+## vals is a vector of expressions to demonstrate how the concept can be applied to complex cases
+expr <- setNames(vals, cols)
 dplyr::mutate(mtcars, !!!expr)
 ```
 
 ::: {.callout-important}
-Although `:=` looks like a function, it is not!
+`:=` is not a normal function; it is interpreted by dplyr to assign new column names dynamically.
 :::
 
 ### Working with Columns
@@ -1002,7 +1001,7 @@ expr <- rlang::call2(
 )
 ```
 
-o include this in a JSON expression, we can consider recursively breaking the entire expression into smaller and smaller expressions comprising of an operator, a left-hand side and a right-hand side (`lhs`:`operator`:`rhs`).  As an instruction set this could look like:
+To include this in a JSON expression, we can consider recursively breaking the entire expression into smaller and smaller expressions comprising of an operator, a left-hand side and a right-hand side (`lhs`:`operator`:`rhs`).  As an instruction set this could look like:
 
 ```json
 {
@@ -1129,7 +1128,7 @@ mutate_operators <- c(
 )
 ```
 
-and our engine becomes
+This mapping allows the engine to convert operator strings in JSON into calls inside R, using `rlang::call2()`.  Our engine now becomes
 
 ```{r}
 #| message: false

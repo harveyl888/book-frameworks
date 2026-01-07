@@ -964,7 +964,7 @@ data <- dplyr::mutate(mtcars, !!!expr)
 print(data)
 ```
 
-### Generic Approach for Operators, Scalars and Columns
+### Generic Approach for Operators, Scalars and Columns {#sec-mutate-generic}
 
 Based on what was discussed in @sec-filter-mapping-operators and @sec-combining-values-and-column-names, the mutate function can be extended to work with different operators and a mixture of scalar and column values.  For example, if we wish to calculate `new_col = mpg * cyl + 5`.
 
@@ -1015,7 +1015,6 @@ To include this in a JSON expression, we can consider recursively breaking the e
   "rhs": 5
 }
 ```
-
 
 ```{r}
 #| echo: false
@@ -1259,4 +1258,248 @@ rlang::syms(inp$summarize$by)
 When passing to the `summarize()` function, the `.by` argument expects a single. object (eg a vector or list).  Using `!!!by_expr` alone would splice two arguments (cyl and gear).  Passing `c(!!!by_expr)` collects them into a single object.
 :::
 
+### Multiple Summary Metrics
 
+A single `summarize()` call often computes mutliple aggregates at once.  The output is one row per group with mutiple columns.
+
+```{r}
+dplyr::summarize(mtcars, avg_mpg = mean(mpg), max_hp = max(hp), n = dplyr::n(), .by = cyl)
+```
+
+```json
+{
+  "summarize": {
+    "by": ["cyl"],
+    "metrics": [
+      { "name": "avg_mpg","operator": "mean", "column": "mpg"},
+      { "name": "max_hp", "operator": "max", "column": "hp"},
+      { "name": "n", "operator": "n" }
+    ]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="avg_mean", operator="mean", column="mpg"), list(name="max_hp", operator="max", column="hp"), list(name="n", operator="n")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+build_summarize <- function(x) {
+  lapply(x, function(y) {
+    if (y$operator == "n") {
+      expr <- rlang::call2("n", .ns = "dplyr")
+    } else {
+      expr <- rlang::call2(y$operator, rlang::sym(y$column))
+    }
+    setNames(list(expr), y$name)
+  }) |>
+    unlist(recursive = TRUE)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## summarize expression
+summarize_expr <- build_summarize(inp$summarize$metrics)
+
+## list of grouping columns
+by_expr <- rlang::syms(inp$summarize$by)
+
+data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
+print(data)
+```
+
+Here, each summarize expression is built using `build_summarize()`
+
+```{r}
+build_summarize(inp$summarize$metrics)
+```
+
+and passed to `dplyr::summarize()` using `!!!`.  The list of grouping columns is, once again, a list of syms
+
+```{r}
+rlang::syms(inp$summarize$by)
+```
+
+## Multiple Columns in a Single Metric
+
+A summary aggregate can depend on multiple columns.
+
+```{r}
+dplyr::summarize(mtcars, av_ratio = mean(mpg / hp), .by = cyl)
+```
+
+```json
+{
+  "summarize": {
+    "by": ["cyl"],
+    "metrics": [
+      {
+        "name": "avg_ratio",
+        "operator": "mean",
+        "expression": {
+          "operator": "/",
+          "lhs": "mpg",
+          "rhs": "hp"
+        }
+      }
+    ]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="avg_ratio", operator="mean", expression=list(operator="/", lhs="mpg", rhs="hp"))))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+The `build_expr()` function is the same as `build_mutate()` in @sec-mutate-generic
+
+```{r}
+build_expr <- function(x, col_names = c()) {
+
+  if (
+    is.character(x) && 
+    length(x) == 1 && 
+    x %in% col_names
+  ) {
+    return(rlang::sym(x))
+  }
+
+  if (
+    is.atomic(x) && 
+    length(x) == 1
+  ) {
+    return(x)
+  }
+
+  rlang::call2(x$operator,
+    build_expr(x$lhs, col_names),
+    build_expr(x$rhs, col_names)
+  )
+}
+
+build_summarize <- function(x, col_names = c()) {
+  lapply(x, function(y) {
+    setNames(
+      list(
+        rlang::call2(y$operator, build_expr(y$expression, col_names))
+      ),
+      y$name
+    )
+  }) |>
+    unlist(recursive = TRUE)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## summarize expression
+summarize_expr <- build_summarize(inp$summarize$metrics, names(mtcars))
+
+## list of grouping columns
+by_expr <- rlang::syms(inp$summarize$by)
+
+data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
+print(data)
+```
+
+### Using Parentheses in Summary Expressions
+
+Operator precedence matters inside summary steps and therefore it is important to include a way to build up hierarchical expressions.
+
+```{r}
+dplyr::summarize(mtcars, score = mean((mpg + hp) / wt), .by = cyl)
+```
+
+From a conceptual approach, this can be considered as
+
+```
+mean(
+  "/"(
+    "+"(mpg, hp),
+    wt
+  )
+)
+```
+
+and represented in JSON as
+
+```json
+{
+  "summarize": {
+    "by": ["cyl"],
+    "metrics": [
+      {
+        "name": "score",
+        "operator": "mean",
+        "expression": {
+          "operator": "/",
+          "lhs": {
+            "operator": "+",
+            "lhs": "mpg",
+            "rhs": "hp"
+          },
+          "rhs": "wt"
+        }
+      }
+    ]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="score", operator="mean", expression=list(operator="/", lhs=list(operator="+", lhs="mpg", rhs="hp"), rhs="wt"))))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+The structure of the expression tree preserves the notion of parentheses; the order of operations is determined by how the expression is nested.
+
+```{r}
+build_expr <- function(x, col_names = c()) {
+
+  if (
+    is.character(x) && 
+    length(x) == 1 && 
+    x %in% col_names
+  ) {
+    return(rlang::sym(x))
+  }
+
+  if (
+    is.atomic(x) && 
+    length(x) == 1
+  ) {
+    return(x)
+  }
+
+  rlang::call2(x$operator,
+    build_expr(x$lhs, col_names),
+    build_expr(x$rhs, col_names)
+  )
+}
+
+build_summarize <- function(x, col_names = c()) {
+
+  lapply(x, function(y) {
+    inner_expr <- build_expr(y$expression, col_names)
+    summary_expr <- rlang::call2(y$operator, inner_expr)
+
+    setNames(list(summary_expr), y$name)
+  }) |>
+    unlist(recursive = TRUE)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## summarize expression
+summarize_expr <- build_summarize(inp$summarize$metrics, names(mtcars))
+
+## list of grouping columns
+by_expr <- rlang::syms(inp$summarize$by)
+
+data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
+print(data)
+```

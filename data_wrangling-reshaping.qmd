@@ -1,0 +1,142 @@
+# Reshaping
+
+Whereas verbs such as `filter()`, `mutate()` and `summarize()` operate on values in rows, reshaping verbs change the structure of the data itself.  Reshaping  typically affects the number of rows and/or columns by reorganizing how the data are represented.
+
+## Pivoting Longer
+
+### `pivot_longer()`
+
+`tidyr::pivot_longer()` transforms data from wide to long format by collapsing multiple columns into key-value pairs.  It can take a number of arguments but the following are commonly used:
+
+  - `cols` - list of columns to reshape
+  - `names_to` - name of the new key column
+  - `values_to` - name of the new value column
+
+### Pivoting Variables Longer
+
+```{r}
+tidyr::pivot_longer(mtcars, cols = c(mpg, hp, wt), names_to = "metric", values_to = "value")
+```
+
+Here we pivot on the variables **mpg**, **hp** and **wt**, combining the values into a single column (**value**) with the **metric** column used for labeling.  In the resulting data frame the number of columns has been reduced by one (from 11 to 10) and the number of rows increased by 64 (from 32 to 96).
+
+We can introduce a JSON format for pivot_longer:
+
+```json
+{
+  "pivot_longer": {
+    "cols": ["mpg", "hp", "wt"],
+    "names_to": "metric",
+    "values_to": "value"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(pivot_longer=list(cols=list("mpg", "cyl", "wt"), names_to="metric", values_to="value")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+Since `pivot_longer()` requires column names and strings as input, the expression building using `!!`, `!!!` and `rlang::call2()` that has been utilized for other functions, is not needed here.  An engine to process `pivot_longer()` is much simpler.
+
+```{r}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+pivot_cols <- unlist(inp$pivot_longer$cols, use.names = FALSE)
+data <- tidyr::pivot_longer(
+    mtcars, 
+    cols = tidyselect::all_of(pivot_cols), 
+    names_to = inp$pivot_longer$names_to, 
+    values_to = inp$pivot_longer$values_to
+)
+print(data)
+```
+
+### The Use of `all_of()`
+
+`tidyselect::all_of()` is a column selection helper.  It does not evaluate expressions but returns a tidyselect specification that functions like `dplyr::select()` and `tidyr::pivot_longer()` understand.  `pivot_longer()` accepts column names unquoted, so this code works:
+```{r}
+#| eval: false
+tidyr::pivot_longer(mtcars, cols = c(mpg, hp, wt), names_to = "metric", values_to = "value")
+```
+but when columns names are stored in character vectors it no longer works:
+```{r}
+#| eval: false
+cols <- c("mpg", "hp", "wt")
+tidyr::pivot_longer(mtcars, cols = cols, names_to = "metric", values_to = "value")
+```
+selection helpers, such as `all_of()` allows the use of character vectors
+```{r}
+#| eval: false
+cols <- c("mpg", "hp", "wt")
+tidyr::pivot_longer(mtcars, cols = tidyselect::all_of(cols), names_to = "metric", values_to = "value")
+```
+
+`!!!` is **NOT** the same as `all_of()`  
+`!!!` splices arguments and `all_of()` builds a single selection object.  
+This code will fail as `cols` expects a single argument.
+```{r}
+#| eval: false
+cols <- c("mpg", "hp", "wt")
+tidyr::pivot_longer(mtcars, cols = !!!rlang::syms(cols), names_to = "metric", values_to = "value")
+```
+
+::: {.callout-note}
+`all_of()` will error if any column names are missing.  
+`any_of()` will select column names that exist and ignore missing ones.  
+`all_of()` is better suited for frameworks as correctness is important and incorrect columns should be treated as errors.
+:::
+
+## Pivoting Wider
+
+### `pivot_wider()`
+
+`tidyr::pivot_longer()` transforms data from long to wide format by spreading key-value pairs into separate columns.  It is the inverse transformation of `pivot_longer()`.  `pivot_wider()` can take a number of arguments but the following are commonly used:
+
+  - `id_cols` - a set of columns that uniquely identify each observation.  Defaults to all columns (except those specified through `names_from` and `values_from`) if omitted.
+  - `names_from` - column to use for the output column
+  - `values_from` - column to use for the cell values
+
+### Pivoting Variables Wider
+
+```{r}
+tidyr::pivot_wider(mtcars, id_cols = c(mpg, hp, wt), names_from = gear, values_from = carb)
+```
+
+Here, the columns **mpg**, **hp** and **wt** are retained, and they uniquely identify each row.  The **gear** column is transformed wide so that 3 new columns are created, one for each value of **gear**.  These new columns are populated with the values found in **carb**.
+
+In JSON format:
+
+```json
+{
+  "pivot_wider": {
+    "cols": ["mpg", "hp", "wt"],
+    "names_from": "gear",
+    "values_from": "carb"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+Whereas `pivot_longer()` passes `names_to` and `values_to` as strings (the new name of columns), `pivot_wider()` passes `names_from` and `values_from` as column identifiers.  Therefore, `rlang::sym()` is required when building and engine to process `pivot_wider()`.
+
+```{r}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+data <- tidyr::pivot_wider(
+    mtcars, 
+    id_cols = tidyselect::all_of(pivot_cols), 
+    names_from = !!rlang::sym(inp$pivot_wider$names_to), 
+    values_from = !!rlang::sym(inp$pivot_wider$values_to)
+)
+print(data)
+```

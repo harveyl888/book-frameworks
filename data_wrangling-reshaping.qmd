@@ -140,3 +140,131 @@ data <- tidyr::pivot_wider(
 )
 print(data)
 ```
+
+### Additional Arguments
+
+`pivot_wider()` can accept several additional optional arguments.  The engine can be extended to accommodate these.  Some are exemplified below.
+
+#### `names_prefix`
+
+`names_prefix` is used to add a string to the start of each new column name.
+
+```{r}
+tidyr::pivot_wider(mtcars, id_cols = c(mpg, hp, wt), names_from = gear, values_from = carb, names_prefix = "gear_")
+```
+
+In JSON format:
+
+```json
+{
+  "pivot_wider": {
+    "cols": ["mpg", "hp", "wt"],
+    "names_from": "gear",
+    "values_from": "carb",
+    "names_prefix": "gear_"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", names_prefix="gear_")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+data <- tidyr::pivot_wider(
+    mtcars, 
+    id_cols = tidyselect::all_of(pivot_cols), 
+    names_from = !!rlang::sym(inp$pivot_wider$names_to), 
+    values_from = !!rlang::sym(inp$pivot_wider$values_to),
+    names_prefix = inp$pivot_wider$names_prefix
+)
+print(data)
+```
+
+#### `values_fill`
+
+`values_fill` determines how to address missing values.  It can be a scalar or a named list if applying different values to each column.
+
+```{r}
+tidyr::pivot_wider(mtcars, id_cols = c(mpg, hp, wt), names_from = gear, values_from = carb, values_fill = 0)
+```
+
+In JSON format:
+
+```json
+{
+  "pivot_wider": {
+    "cols": ["mpg", "hp", "wt"],
+    "names_from": "gear",
+    "values_from": "carb",
+    "values_fill": 0
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", values_fill=0)), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+data <- tidyr::pivot_wider(
+    mtcars, 
+    id_cols = tidyselect::all_of(pivot_cols), 
+    names_from = !!rlang::sym(inp$pivot_wider$names_to), 
+    values_from = !!rlang::sym(inp$pivot_wider$values_to),
+    values_fill = inp$pivot_wider$values_fill
+)
+print(data)
+```
+
+If `values_fill` is missing we can apply a detault value using the rlang `%||%` operator.
+
+```json
+{
+  "pivot_wider": {
+    "cols": ["mpg", "hp", "wt"],
+    "names_from": "gear",
+    "values_from": "carb"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+library(rlang)
+default_missing <- -99
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+data <- tidyr::pivot_wider(
+    mtcars, 
+    id_cols = tidyselect::all_of(pivot_cols), 
+    names_from = !!rlang::sym(inp$pivot_wider$names_to), 
+    values_from = !!rlang::sym(inp$pivot_wider$values_to),
+    values_fill = inp$pivot_wider$values_fill %||% default_missing
+)
+print(data)
+```
+
+::: {.callout-tip}
+`%||%` is an infix function which works as follows:  
+`x %||% y` If `x` is NULL then return `y` otherwise return `x`
+:::

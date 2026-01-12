@@ -201,7 +201,7 @@ We apply `purrr::modify_tree()` to `contents` in order to perform variable subst
 
 This process is repeated for each variable, so that all placeholders, no matter how deeply nested, will be replaced with their corresponding values.  Once complete, `contents` holds the updated list with the original structure.
 
-#### Extending to Different Types of Data
+#### Extending to Different Types of Data {#sec-variables-different}
 
 The concept of variables can be extended to account for different types of data.  The approach in @sec-variable-multiple works well for strings but fails in the cases of numeric, boolean and vectors.  To extend for numerics and booleans we cannot use `gsub()` and have to check for equivalence as shown in the example that follows:
 
@@ -258,6 +258,494 @@ The `modify_tree()` function now runs through the following checks:
 -  Otherwise return `x`.
 
 This approach works when direct replacement is all that is required (eg replacing `$myVar2` with `55`).  It will not work when a variable is used in an expression (eg `$myVar2$ + 10`).
+
+### Expression Parsing
+
+In order to work with expressions such as `$myVar2$ + 10` we need to build an expression parser.  As highlighted previously (@sec-command-parsing), when evaluating expressions there is a temptation to use `eval(parse())` directly.  This should be avoided as it could lead to arbitrary code execution.
+
+A safe expression parser should parse an expression into an AST (abstract syntax tree) and validate the AST before evaluating.
+
+Let's start with a JSON input:
+
+```json
+{
+    "variables": {
+        "myVar1": true,
+        "myVar2": 55
+    },
+    "contents": {
+        "val1": "$myVar1$",
+        "val2": "$myVar2$ + 10",
+        "val3": "($myVar2$ > 50) && $myVar1$"
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1=TRUE, myVar2=55), contents=list(val1="$myVar1$", val2="$myVar2$ + 10", val3="($myVar2$ > 50) && $myVar1$")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+The engine requires several components, which will be built as a group of functions.
+
+#### Variable Substitution
+
+First we substitute the variables using a slightly different engine to the one in @sec-variables-different.  The previous substitution approach is too simple for expression building.  The following situations need to be solved:
+
+-  non-character variables were only replaced if they matched exactly (eg `$myVar2$` would replace in `$myVar2$` but not in `$myVar2$ + 1`).  An updated substitution code requires numeric and logical variables to be substituted inside strings.
+-  change `as.character()` approach.  This works for simple value numeric and logical replacements but fails for vectors and ranges.  The base function `deparse()` is a better approach for expression building.
+
+::: {.callout-note}
+## Why `deparse()`?
+`deparse()` converts values back into source code, which is what is needed for expression parsing.  The difference between `as.character()` and `deparse()` is shown below:
+
+| value | `as.character()` | `deparse()` |
+| --- | --- | --- |
+| `2` | "2" | "2" |
+| `TRUE` | "TRUE" | "TRUE" |
+| `c(1, 2)` | "1" "2" | "c(1, 2)" |
+| `1:3` | "1" "2" "3" | "1:3" |
+:::
+
+```{r}
+substitute_vars <- function(x, vars) {
+  if (!is.character(x)) return(x)
+
+  for (v in names(vars)) {
+    replacement <- if (is.logical(vars[[v]]) || is.numeric(vars[[v]])) {
+      deparse(vars[[v]])
+    } else {
+      as.character(vars[[v]])
+    }
+
+    x <- gsub(paste0("$", v, "$"), replacement, x, fixed = TRUE)
+  }
+
+  x
+}
+```
+
+```{r}
+vars <- list(myVar1 = "text string", myVar2 = 22)
+substitute_vars("this is a $myVar1$", vars)
+substitute_vars("$myVar2$ + 10", vars)
+```
+
+#### Parsing Expressions
+
+After substituting variables, the next step is to parse the expression without running it.  We also wish to determine if a string is an expression or not.  The following function will return `TRUE` if `x` is an expression, otherwise it will return `FALSE`.
+
+```{r}
+is_expression <- function(x) {
+  tryCatch(
+    {
+      expr <- rlang::parse_expr(x)
+      !rlang::is_atomic(expr)
+    },
+    error = function(e) FALSE
+  )
+}
+```
+
+```{r}
+is_expression("1 + 2")
+is_expression("Hello World")
+```
+
+::: {.callout-tip}
+`rlang::parse_expr()` parses an expression without running it.  Parsing an expression produces an AST (abstract expression tree).  For example, running `rlang::parse_expr("1 + 2")` produces the AST
+
+```
++
+├─ 1
+└─ 2
+```
+:::
+
+#### Validating the AST
+
+Once the AST has been built it can be validated prior to evaluation.  That will ensure that only permitted operators can be used.  The validation should block any function calls and assignments in order to protect from injection.
+
+```{r}
+allowed_calls <- c("+", "-", "*", "/", "^", ">", ">=", "<", "<=", "==", "!=", "&&", "||", "!")
+
+validate_expression <- function(expr) {
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping, not execution
+    if (fn == "(") {
+      validate_expression(expr[[2]])
+      return(TRUE)
+    }
+
+    if (!fn %in% allowed_calls) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    for (i in 2:length(expr)) {
+      validate_expression(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  stop("Unsupported expression type", call. = FALSE)
+}
+```
+
+The `validate_expression()` function walks through the parsed expression (AST) and ensures that **every** part is allowed before anything is evaluated.  This version has been written to check the expression for simple arithmetic and logical expressions, nothing else, as defined in `allowed_calls`.  If the AST is composed of safe operators and values then return `TRUE`, if not then **stop**.  The function works by performing a recursively traversing the AST with the following logic:
+
+-  If the node is an atomic value (eg numeric, logical, string) then allow it.
+-  If the node is a function call (eg `1 + 2`, `x > 5`) then
+    -  check that the function call is allowed,
+    -  recursively validate each argument.
+-  Anything else => reject.
+
+Note: Parentheses are ignored.  They are not function calls, but are grouping.  The AST for the expression `x > 1` is
+
+```
+>
+├─ x
+└─ 1
+```
+
+whereas the AST for the expression `(x > 1)` is
+
+```
+(
+└─ >
+   ├─ x
+   └─ 1
+```
+
+This part of the code ignores the parentheses and validates the inner part (in this case `>`(x, 1)) of the expression ony:
+
+```{r}
+#| eval: false
+if (fn == "(") {
+  validate_expression(expr[[2]])
+  return(TRUE)
+}
+```
+
+The following examples illustrate that, although `mean(c(1,2,3))` is a valid R expression, it is rejected by `validate_expression()` as `mean()` is not in `allowed_calls`.
+
+```{r}
+#| error: true
+validate_expression(rlang::parse_expr('1 + 2'))
+validate_expression(rlang::parse_expr('mean(c(1,2,3))'))
+validate_expression(rlang::parse_expr('x[1]'))
+validate_expression(rlang::parse_expr('library(dplyr)'))
+```
+
+After taking care of parentheses and ensuring that all operators are present in `allowed_calls`, the following code passes the lefthand and righthand sides of the expression are back into `validate_expression()` 
+
+```{r}
+#| eval: false
+for (i in 2:length(expr)) {
+  validate_expression(expr[[i]])
+}
+```
+
+`expr[[2]]` and `expr[[3]]` are the lefthand and righthand sides of the expression as shown:
+
+```{r}
+expr <- rlang::parse_expr("1 + 2")
+expr[[1]]
+expr[[2]]
+expr[[3]]
+```
+
+#### Evaluation
+
+At this point we know our expression only contains operators in the allowed list and we can evaluate it.  A simple function combines validation and evaluation as follows:
+
+```{r}
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr)
+}
+```
+
+```{r}
+safe_eval(rlang::parse_expr('1 + 2'))
+```
+
+By default, `eval()` evaluates within the environment in which it was called.  Even if our AST contains just operators listed in `allowed_calls`, R still has to look up these symbols when evaluating an expression.  By default `+` points to the addition operator one of the beautiful things about R is that `+` can be redefined, for example to `-`.
+
+```{r}
+## store default `+` behavior
+add_operator_default <- `+`
+
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr)
+
+## reassign `+` to act as `-`
+`+` <- `-`
+
+eval(my_expr)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+There's a potential for injection here so to make things more secure, we could use an environment just for evaluation.  Our safe environment will contain the mappings we need to ensure that nothing can be changed.
+
+```{r}
+## map all required operators for use in a safe environment
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`
+  )
+)
+
+## store default `+` behavior
+add_operator_default <- `+`
+
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr, envir = safe_env)
+
+## reassign `+` to act as `-`
+`+` <- `-`
+
+eval(my_expr, envir = safe_env)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+We can also confirm that functions not listed in our environment are blocked.
+
+```{r}
+#| error: true
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("mean(c(1, 2, 3))")
+
+## evaluate in global environment
+eval(my_expr)
+
+## evaluate in safe environment
+eval(my_expr, envir = safe_env)
+```
+
+Here's our updated safe evaluation
+
+```{r}
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`,
+    `^`  = `^`,
+    `>`  = `>`,
+    `<`  = `<`,
+    `>=` = `>=`,
+    `<=` = `<=`,
+    `==` = `==`,
+    `!=` = `!=`,
+    `&`  = `&`,
+    `|`  = `|`,
+    `&&` = `&&`,
+    `||` = `||`,
+    `!`  = `!`    
+  )
+)
+
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr, envir = safe_env)
+}
+```
+
+#### A function to run it all
+
+Now we have all the components, we just need a function to run variable substitution followed by validation and evaluation.  Here we extend the `substitute_vars()` function to include the additional steps in a simple helper function.
+
+```{r}
+substitute_and_eval <- function(x, vars) {
+  if (!is.character(x)) return(x)
+
+  # Substitute variables
+  for (v in names(vars)) {
+    replacement <- if (is.logical(vars[[v]]) || is.numeric(vars[[v]])) {
+      deparse(vars[[v]])
+    } else {
+      as.character(vars[[v]])
+    }
+
+    x <- gsub(paste0("$", v, "$"), replacement, x, fixed = TRUE)
+  }
+
+  # Evaluate expressions
+  if (is_expression(x)) {
+    expr <- rlang::parse_expr(x)
+    return(safe_eval(expr))
+  }
+
+  # Coerce literals
+  if (x %in% c("TRUE", "FALSE")) return(as.logical(x))
+  if (!is.na(suppressWarnings(as.numeric(x)))) return(as.numeric(x))
+
+  x
+}
+```
+
+`substitute_and_eval()` is the function run within `purrr::modify_tree()` to substitute and evaluate for each leaf of our tree.  The function takes a named list of variables and a list or character string and performs the following steps:
+
+-  variable substitution - substitute only known variable names
+-  expression testing - check to see if the input is an expression
+-  expression validation - check that only desired functions/operators are used in the expression
+-  safe evaluation - evaluated in a safe environment
+-  coerce literals - if string was not an expression (numeric or logical) then return the literal value
+-  fallback - if not an expression or literal, then return unchanged
+
+#### Putting it all Together
+
+Our final expression parser looks like this:
+
+```{r}
+is_expression <- function(x) {
+  tryCatch(
+    {
+      expr <- rlang::parse_expr(x)
+      !rlang::is_atomic(expr)
+    },
+    error = function(e) FALSE
+  )
+}
+
+allowed_calls <- c("+", "-", "*", "/", "^", ">", ">=", "<", "<=", "==", "!=", "&&", "||", "!")
+
+validate_expression <- function(expr) {
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping, not execution
+    if (fn == "(") {
+      validate_expression(expr[[2]])
+      return(TRUE)
+    }
+
+    if (!fn %in% allowed_calls) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    for (i in 2:length(expr)) {
+      validate_expression(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+safe_env <- rlang::new_environment(
+  list(
+    `(` = `(`,
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`,
+    `^`  = `^`,
+    `>`  = `>`,
+    `<`  = `<`,
+    `>=` = `>=`,
+    `<=` = `<=`,
+    `==` = `==`,
+    `!=` = `!=`,
+    `&`  = `&`,
+    `|`  = `|`,
+    `&&` = `&&`,
+    `||` = `||`,
+    `!`  = `!`
+  )
+)
+
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr, envir = safe_env)
+}
+
+substitute_and_eval <- function(x, vars) {
+  if (!is.character(x)) return(x)
+
+  # Substitute variables
+  for (v in names(vars)) {
+    replacement <- if (is.logical(vars[[v]]) || is.numeric(vars[[v]])) {
+      deparse(vars[[v]])
+    } else {
+      as.character(vars[[v]])
+    }
+
+    x <- gsub(paste0("$", v, "$"), replacement, x, fixed = TRUE)
+  }
+
+  # Evaluate expressions
+  if (is_expression(x)) {
+    expr <- rlang::parse_expr(x)
+    return(safe_eval(expr))
+  }
+
+  # ensure that logicals and numerics are returned as correct type
+  if (x %in% c("TRUE", "FALSE")) return(as.logical(x))
+  if (!is.na(suppressWarnings(as.numeric(x)))) return(as.numeric(x))
+
+  x
+}
+
+```
+
+and can be used as follows:
+
+```json
+{
+    "variables": {
+        "myVar1": true,
+        "myVar2": 55
+    },
+    "contents": {
+        "val1": "$myVar1$",
+        "val2": "$myVar2$ + 10",
+        "val3": "($myVar2$ > 50) && $myVar1$"
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(variables=list(myVar1=TRUE, myVar2=55), contents=list(val1="$myVar1$", val2="$myVar2$ + 10", val3="($myVar2$ > 50) && $myVar1$")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+result <- purrr::modify_tree(
+  inp$contents, 
+  leaf = \(x) substitute_and_eval(x, inp$variables)
+)
+print(result)
+```
 
 ## Loops
 

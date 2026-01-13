@@ -1,0 +1,3 @@
+# Introduction
+
+Both JSON and YAML are suitable formats for passing instructions to an engine but each have their limitations.  This section describes how the engine itself can be used to extend the scope of JSON and YAML.  Concepts of variables, loops, etc will be discussed for both JSON and YAML, and demonstrated for JSON, although the same concepts apply to YAML.

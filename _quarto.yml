@@ -20,7 +20,11 @@ book:
       - data_wrangling-selection-and-ordering.qmd
       - data_wrangling-transformation.qmd
       - data_wrangling-reshaping.qmd
-      - advanced_instructions.qmd
+    - part: "Advanced Instructions"
+      chapters:
+      - advanced_instructions-introduction.qmd
+      - advanced_instructions-variables.qmd
+      - advanced_instructions-loops.qmd
     - part: "Shiny"
       chapters:
       - shiny_interface.qmd

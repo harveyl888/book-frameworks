@@ -1,10 +1,6 @@
-# Advanced Instructions
+# Variables
 
-Both JSON and YAML are suitable formats for passing instructions to an engine but each have their limitations.  This section describes how the engine itself can be used to extend the scope of JSON and YAML.  Concepts of variables, loops, etc will be discussed for both JSON and YAML, and demonstrated for JSON, although the same concepts apply to YAML.
-
-## Variables
-
-### Variables in Pure JSON and YAML
+## Variables in Pure JSON and YAML
 
 JSON does not have a concept of variables or variable reuse.  YAML does include anchors (&) and aliases (*) which allow for reuse.  For example, in YAML the following is permitted:
 
@@ -24,9 +20,9 @@ threshold: &thresh 30
 max_threshold: *thresh + 10
 ```
 
-### Building a Variable Parser
+## Building a Variable Parser
 
-#### Simple Case {#sec-variable-simple}
+### Simple Case {#sec-variable-simple}
 
 To encode variables in JSON format, consider the following:
 
@@ -52,7 +48,7 @@ inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 inp
 ```
 
-The variables listed under `variables` in the JSON file are available through inp$variables$name where `name` is the name of a variable.
+The variables listed under `variables` in the JSON file are available through `inp$variables$name` where `name` is the name of a variable.
 
 Now all we need is a method to replace a variable name with the value of the variable.  This can be achieved by defining a syntax for variables.  For example, in the case below we define variable use as `$name$` where `name` is the name of a variable.  Here `subValue` is set to be equal to the variable `myVar2` by defining it as `$myVar2$`.
 
@@ -117,12 +113,12 @@ if (!is.null(inp$variables)) {
 print(inp)
 ```
 
-#### Extending to Multiple Replacements {#sec-variable-multiple}
+### Extending to Multiple Replacements {#sec-variable-multiple}
 
 The example in @sec-variable-simple demonstrated a simple case of variable parsing but how can this work in a more generalized approach when the JSON structure we wish to process is more complex.  One way to tackle this is to use `purrr::modify_tree()` which modifies the contents of a nested list.  An example if its use for variable parsing is shown below.
 
 ::: {.callout-tip}
-`purrr::modify_tree(.x, .f)` recursively walks through a nested list `.x`, applying the function, `.f`, to every element in the tree, and returns a new list with the same structure.
+`purrr::modify_tree()` recursively walks through a nested list and applies a function to either the *leaves* (terminal values), the *nodes* (lists that contain other elements), or both, returning a new list with the same structure.
 :::
 
 ```json
@@ -201,7 +197,7 @@ We apply `purrr::modify_tree()` to `contents` in order to perform variable subst
 
 This process is repeated for each variable, so that all placeholders, no matter how deeply nested, will be replaced with their corresponding values.  Once complete, `contents` holds the updated list with the original structure.
 
-#### Extending to Different Types of Data {#sec-variables-different}
+### Extending to Different Types of Data {#sec-variables-different}
 
 The concept of variables can be extended to account for different types of data.  The approach in @sec-variable-multiple works well for strings but fails in the cases of numeric, boolean and vectors.  To extend for numerics and booleans we cannot use `gsub()` and have to check for equivalence as shown in the example that follows:
 
@@ -259,7 +255,7 @@ The `modify_tree()` function now runs through the following checks:
 
 This approach works when direct replacement is all that is required (eg replacing `$myVar2` with `55`).  It will not work when a variable is used in an expression (eg `$myVar2$ + 10`).
 
-### Expression Parsing
+## Expression Parsing
 
 In order to work with expressions such as `$myVar2$ + 10` we need to build an expression parser.  As highlighted previously (@sec-command-parsing), when evaluating expressions there is a temptation to use `eval(parse())` directly.  This should be avoided as it could lead to arbitrary code execution.
 
@@ -289,7 +285,7 @@ jsonlite::write_json(list(variables=list(myVar1=TRUE, myVar2=55), contents=list(
 
 The engine requires several components, which will be built as a group of functions.
 
-#### Variable Substitution
+### Variable Substitution
 
 First we substitute the variables using a slightly different engine to the one in @sec-variables-different.  The previous substitution approach is too simple for expression building.  The following situations need to be solved:
 
@@ -332,7 +328,7 @@ substitute_vars("this is a $myVar1$", vars)
 substitute_vars("$myVar2$ + 10", vars)
 ```
 
-#### Parsing Expressions
+### Parsing Expressions
 
 After substituting variables, the next step is to parse the expression without running it.  We also wish to determine if a string is an expression or not.  The following function will return `TRUE` if `x` is an expression, otherwise it will return `FALSE`.
 
@@ -363,7 +359,7 @@ is_expression("Hello World")
 ```
 :::
 
-#### Validating the AST
+### Validating the AST
 
 Once the AST has been built it can be validated prior to evaluation.  That will ensure that only permitted operators can be used.  The validation should block any function calls and assignments in order to protect from injection.
 
@@ -462,7 +458,7 @@ expr[[2]]
 expr[[3]]
 ```
 
-#### Evaluation
+### Evaluation
 
 At this point we know our expression only contains operators in the allowed list and we can evaluate it.  A simple function combines validation and evaluation as follows:
 
@@ -571,7 +567,7 @@ safe_eval <- function(expr) {
 }
 ```
 
-#### A function to run it all
+### A function to run it all
 
 Now we have all the components, we just need a function to run variable substitution followed by validation and evaluation.  Here we extend the `substitute_vars()` function to include the additional steps in a simple helper function.
 
@@ -613,7 +609,7 @@ substitute_and_eval <- function(x, vars) {
 -  coerce literals - if string was not an expression (numeric or logical) then return the literal value
 -  fallback - if not an expression or literal, then return unchanged
 
-#### Putting it all Together
+### Putting it all Together
 
 Our final expression parser looks like this:
 
@@ -746,287 +742,3 @@ result <- purrr::modify_tree(
 )
 print(result)
 ```
-
-## Loops
-
-### Loops in Pure JSON and YAML
-
-Neither JSON or YAML support loops and therefore looping has to be built as a preprocessing layer in the engine.
-
-### Looping Over Values
-
-A simple looping strategy can be built into the engine as follows:
-
-```json
-{
-    "loop": {
-        "variable": "$l1$",
-        "values": [1, 2, 3]
-    },
-    "content": {
-        "val1": "$l1$",
-        "val2": "Hello"
-    }
-}
-```
-
-and executed as follows:
-
-```{r}
-#| echo: false
-#| eval: true
-jsonlite::write_json(list(loop=list(variable="$l1$", values=list(1,2,3)), content=list(val1="$l1$", val2="Hello")), 'data/myfile.json', auto_unbox = TRUE)
-```
-
-```{r}
-inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-
-result <- list()
-if (!is.null(inp$loop)) {
-  var_name <- inp$loop$variable
-  for (l in inp$loop$values) {
-    var_value <- l
-    loop_result <- purrr::modify_tree(inp$content, leaf = \(x) {
-      if (is.list(x)) {
-        x
-      } else {
-        gsub(var_name, var_value, x, fixed = TRUE)
-      }
-    })
-    result <- append(result, list(loop_result))
-  }
-}
-print(result)
-```
-
-### Nested Loops {#sec-loops-nested}
-
-A more generic approach can be achieved by using `expand.grid()` to hold loop values.  Ann advantage of this approach is that nested loops can readily be constructed.  Take the example below with two loops:
-
-```json
-{
-    "loop": [
-        {
-            "variable": "$loop1$", 
-            "values": [1, 2, 3]
-        },
-        {
-            "variable": "$loop2$", 
-            "values": ["Alice", "Bob"]
-        }
-    ],        
-    "content": {
-        "val1": "$loop1$",
-        "val2": "Hello $loop2$"
-    }
-}
-```
-
-Construction the engine using `expand.grid()` to build a data frame of all loop combinations and then running through them one by one is relatively simple:
-
-```{r}
-#| echo: false
-#| eval: true
-jsonlite::write_json(list(loop=list(list(variable="$loop1$", values=list(1,2,3)), list(variable="$loop2$", values=list("Alice","Bob"))), content=list(val1="$loop1$", val2="Hello $loop2$")), 'data/myfile.json', auto_unbox = TRUE)
-```
-
-```{r}
-inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-
-result <- list()
-
-## list of all loop values and loop variable names
-loops <- purrr::map(inp$loop, \(x) x$values) |>
-    purrr::set_names(purrr::map_chr(inp$loop, \(x) x$variable))
-
-## use expand.grid to build a data frame where each row contains a series of loop values
-df_loops <- expand.grid(rev(loops), KEEP.OUT.ATTRS = FALSE)
-
-## reconstruct a list with one entry for each series of loop values
-l_loops <- split(df_loops, 1:nrow(df_loops))
-
-for (loop_set in l_loops) {
-  loop_updated <- inp$content
-  for (loop_count in seq_along(loop_set)) {
-    var_name <- names(loop_set)[loop_count]
-    var_value <- loop_set[[loop_count]]
-
-    loop_updated <- purrr::modify_tree(loop_updated, leaf = \(x) {
-      if (is.list(x)) {
-        x
-      } else {
-        gsub(var_name, var_value, x, fixed = TRUE)
-      }
-    })
-  }
-  result <- append(result, list(loop_updated))
-}
-
-print(result)
-```
-
-The data frame `df_loops` looks as follows:
-
-```{r}
-df_loops
-```
-
-### Building Loops from Variables
-
-Using variables to build loops is a powerful construct since an entire output can be updated by simply changing the values in a variable or pointing to a different one.  We can achieve it by using two passes - one to identify and substitute variable values and one to build the loops.  The example below follows the same code as @sec-loops-nested but replaces *Alice* and *Bob* in `$loop2` values with a variables (`$people$`) that points to *Alice* and *Bob*.  Code explanation will follow the example.
-
-```json
-{
-    "variables": {
-        "people": ["Alice", "Bob"]
-    },
-    "loop": [
-        {
-            "variable": "$loop1$", 
-            "values": [1, 2, 3]
-        },
-        {
-            "variable": "$loop2$", 
-            "values": "$people$"
-        }
-    ],        
-    "content": {
-        "val1": "$loop1$",
-        "val2": "Hello $loop2$"
-    }
-}
-```
-
-```{r}
-#| echo: false
-#| eval: true
-jsonlite::write_json(list(variables=list(people=list("Alice","Bob")), loop=list(list(variable="$loop1$", values=list(1,2,3)), list(variable="$loop2$", values="$people$")), content=list(val1="$loop1$", val2="Hello $loop2$")), 'data/myfile.json', auto_unbox = TRUE)
-```
-
-```{r}
-inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-
-## parse variables
-inp_var_replace <- inp
-
-for (v in names(inp$variables)) {
-  var_name <- paste0("$", v, "$")
-  var_value <- inp$variables[[v]]
-  inp_var_replace <- purrr::modify_tree(
-    inp_var_replace, 
-    leaf = \(x) {
-      if (is.list(x)) {
-        x
-      } else if (is.character(var_value)) {
-        gsub(var_name, var_value, x, fixed = TRUE)
-      } else if (identical(x, var_name)) {
-        var_value
-      } else {
-        x
-      }
-    }
-  )
-}
-
-## execute loops
-result <- list()
-loops <- purrr::map(inp_var_replace$loop, \(x) x$values) |>
-    purrr::set_names(purrr::map_chr(inp_var_replace$loop, \(x) x$variable))
-df_loops <- expand.grid(rev(loops), KEEP.OUT.ATTRS = FALSE)
-l_loops <- split(df_loops, 1:nrow(df_loops))
-
-
-for (loop_set in l_loops) {
-  loop_updated <- inp_var_replace$content
-  for (loop_count in seq_along(loop_set)) {
-    var_name <- names(loop_set)[loop_count]
-    var_value <- loop_set[[loop_count]]
-
-    loop_updated <- purrr::modify_tree(loop_updated, leaf = \(x) {
-      if (is.list(x)) {
-        x
-      } else {
-        gsub(var_name, var_value, x, fixed = TRUE)
-      }
-    })
-  }
-  result <- append(result, list(loop_updated))
-}
-
-print(result)
-```
-
-We can split the code into two sections: replacing variables and running loops.  The initial json input looks like this:
-
-```json
-{
-    "variables": {
-        "people": ["Alice", "Bob"]
-    },
-    "loop": [
-        {
-            "variable": "$loop1$", 
-            "values": [1, 2, 3]
-        },
-        {
-            "variable": "$loop2$", 
-            "values": "$people$"
-        }
-    ],        
-    "content": {
-        "val1": "$loop1$",
-        "val2": "Hello $loop2$"
-    }
-}
-```
-
-The loop variable `$loop2$` points to a variable, `$people$` which holds the values *Alice* and *Bob*.  When we run the initial part of the code (*parse variables*) we generate a new version of *inp* called *inp_var_replace* in which any variable used in inp$variables is replaced with its value.  Since we have converted the JSON format to a list in R, we can readily replace a variable name with a list of values.  The code snippet is shown below, followed by the resulting *inp_var_replace*, shown in JSON format for comparison to the original.
-
-```{r}
-#| eval: false
-## parse variables
-inp_var_replace <- inp
-
-for (v in names(inp$variables)) {
-  var_name <- paste0("$", v, "$")
-  var_value <- inp$variables[[v]]
-  inp_var_replace <- purrr::modify_tree(
-    inp_var_replace, 
-    leaf = \(x) {
-      if (is.list(x)) {
-        x
-      } else if (is.character(var_value)) {
-        gsub(var_name, var_value, x, fixed = TRUE)
-      } else if (identical(x, var_name)) {
-        var_value
-      } else {
-        x
-      }
-    }
-  )
-}
-```
-
-```json
-{
-    "variables": {
-        "people": ["Alice", "Bob"]
-    },
-    "loop": [
-        {
-            "variable": "$loop1$", 
-            "values": [1, 2, 3]
-        },
-        {
-            "variable": "$loop2$", 
-            "values": ["Alice", "Bob"]
-        }
-    ],        
-    "content": {
-        "val1": "$loop1$",
-        "val2": "Hello $loop2$"
-    }
-}
-```
-
-When the second part of the code (*execute loops*) is run, the loop values of *Alice* and *Bob* are used for loop variable `$loop2$` producing the desired output.  By simply changing the values in `$people$`, the output can be affected without having to change values in individual loops.  This can be especially effective when the variable contents are looped over multiple times.

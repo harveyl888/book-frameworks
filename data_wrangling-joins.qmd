@@ -1,0 +1,246 @@
+# Combining Tables
+
+The dplyr library has six functions used to combine data frames on common variables.  Four of these are mutating joins (combining columns) and two are filtering joins (filtering rows).
+
+Assuming we have two data frames, `x` and `y`:
+
+- Mutating Joins
+    - **inner_join(`x`, `y`)** Return all rows from both `x` and `y` in which there are matching rows in both data frames.  Rows that do not match in both data frames are dropped.
+    - **left_join(`x`, `y`)** Return all rows from `x` and any matching rows from `y`.  Rows in `x` without a match in `y` will contain `NA` values in the new columns from `y`.  Rows in `y` without a match in `x` are dropped.
+    - **right_join(`x`, `y`)** Return all rows from `y` and any matching rows from `x`.  Rows in `y` without a match in `x` will contain `NA` values in the new columns from `x`.  Rows in `x` without a match in `y` are dropped.
+    - **full_join(`x`, `y`)** Return all rows and columns from both `x` and `y`.  Where there are no matching values `NA` will be inserted.
+- Filtering Joins
+    - **semi_join(`x`, `y`)** Return all rows from `x` that have a match in `y`.  Similar to `inner_join()` but only keeps columns from `x`.
+    - **anti_join(`x`, `y`)** Return all rows from `x` that do **not** have a match in `y`.  This is often used to find rows in `x` with no corresponding data in `y`.
+
+## Building Joins
+
+### `dplyr::xxx_join()`
+
+Each join in {dplyr} requires two data frames (`x` and `y`) along with one or more columns that specify the keys (`by`).  If `by` is missing, then all common column names are used.
+
+```{r}
+#| eval: false
+## join x and y using matches in `col1`
+dplyr::inner_join(x, y, by = "col1")
+
+## join x and y using matches in both `col1` and `col21
+dplyr::inner_join(x, y, by = c("col1", "col2"))
+```
+
+If the column names in `x` and `y` differ, then a named vector can be used.  For example, if column names in `x` are `col1`, `col2` and `col3`, and column names in `y` are `A`, `B` and `C`, `x` and `y` could be joined as
+
+```{r}
+#| eval: false
+## join x and y using matches in `col1` and `col2`
+dplyr::inner_join(x, y, by = c(col1 = "A", col2 = "B"))
+```
+
+In order to develop the concept we'll need two datasets.
+
+```{r}
+customers <- dplyr::tibble(
+  customer_id = c(1, 2, 3, 4),
+  name = c("Alice", "Bob", "Carol", "Dan")
+)
+
+orders <- dplyr::tibble(
+  customer_id = c(1, 1, 3, 5),
+  order_id = c(101, 102, 103, 104),
+  amount = c(50, 75, 100, 20)
+)
+```
+
+```{r}
+customers
+orders
+```
+
+```{r}
+dplyr::inner_join(customers, orders, by = "customer_id")
+```
+Inner join keeps only the matching keys.
+
+```{r}
+dplyr::left_join(customers, orders, by = "customer_id")
+```
+Left join keeps all customers.
+
+```{r}
+dplyr::right_join(customers, orders, by = "customer_id")
+```
+Right join keeps all orders.
+
+```{r}
+dplyr::full_join(customers, orders, by = "customer_id")
+```
+Full join keeps everything.
+
+```{r}
+dplyr::semi_join(customers, orders, by = "customer_id")
+```
+Semi join keeps customers with at least one order but no columns from `orders` are added and there is no duplication for multiple matches.
+
+```{r}
+dplyr::anti_join(customers, orders, by = "customer_id")
+```
+Anti join keeps customers without any orders.
+
+### A Universal Join Engine
+
+A single engine can be used to join tables.  It works by identifying the type of join and executing the relevant function.  Here's a typical JSON input:
+
+```json
+{
+    "join": {
+        "type": "left",
+        "table_1": "customers",
+        "table_2": "orders",
+        "by" : {
+            "customer_id": "customer_id"
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(join=list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+and here's an engine, assuming our data frames are stored in a named list, tables, such that:
+
+```{r}
+tables <- list(
+    customers = customers,
+    orders = orders
+)
+```
+
+```{r}
+join_operators <- list(
+    inner = dplyr::inner_join,
+    left = dplyr::left_join,
+    right = dplyr::right_join,
+    full = dplyr::full_join,
+    semi = dplyr::semi_join,
+    anti = dplyr::anti_join
+)
+
+build_join <- function(type, tab1, tab2, by) {
+    join_fn <- join_operators[[type]]
+    join_fn(tab1, tab2, by)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+join <- inp$join
+data <- build_join(
+    join$type, 
+    tables[[join$table_1]],
+    tables[[join$table_2]],
+    unlist(join$by)
+)
+print(data)
+```
+
+`join_operators` is a function lookup table which maps a join type (eg, *inner*, *left*, ...) to a dplyr function (eg `dplyr::inner_join()`, `dplyr::left_join()`).
+
+The same engine can be used to process any of the joins.  For example:
+
+```json
+{
+    "join": {
+        "type": "anti",
+        "table_1": "customers",
+        "table_2": "orders",
+        "by" : {
+            "customer_id": "customer_id"
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(join=list(type="anti", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+data <- build_join(
+    join$type, 
+    tables[[join$table_1]],
+    tables[[join$table_2]],
+    unlist(join$by)
+)
+print(data)
+```
+
+### Multiple Joins
+
+Multiple joins can be composed together.  Let's introduce an additional table:
+
+```{r}
+payments <- dplyr::tibble(
+  order_id = c(101, 102, 103, 104),
+  paid = c(TRUE, TRUE, FALSE, TRUE),
+  date = c("2002-10-20", "2003-05-06", NA, "2002-08-19")
+)
+
+tables[["payments"]] <- payments
+```
+
+```json
+{
+    "joins": [
+        {
+            "type": "left",
+            "table_1": "customers",
+            "table_2": "orders",
+            "by" : {
+                "customer_id": "customer_id"
+            }
+        },
+        {
+            "type": "left",
+            "table_2": "payments",
+            "by" : {
+                "order_id": "order_id"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(joins=list(list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id")), list(type="left", table_2="payments", by=list(order_id="order_id")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+data <- data.frame()
+for (j in inp$joins) {
+    if (is.null(j[["table_1"]])) {
+        tab1 <- data
+    } else {
+        tab1 <- tables[[j[["table_1"]]]]
+    }
+    data <- build_join(
+        j[["type"]],
+        tab1,
+        tables[[j[["table_2"]]]],
+        unlist(j[["by"]])
+    )
+}
+
+print(data)
+```
+
+In this approach, the first join step defines the starting table and subsequent joins operate on the current result.

@@ -17,7 +17,7 @@ Assuming we have two data frames, `x` and `y`:
 
 ### `dplyr::xxx_join()`
 
-Each join in {dplyr} requires two data frames (`x` and `y`) along with one or more columns that specify the keys (`by`).  If `by` is missing, then all common column names are used.
+Each join in {dplyr} requires two data frames (`x` and `y`) along with one or more columns that specify the keys (`by`).  If `by` is missing, then all common column names are used.  The three core arguments, `x`, `y` and `by` are all key-based.
 
 ```{r}
 #| eval: false

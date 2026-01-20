@@ -18,38 +18,44 @@ A select step is relatively simple to implement since `dplyr::select()` operates
 
 ```json
 {
-  "cols": ["mpg", "cyl", "wt"]
+  "select" : {
+    "keep": ["mpg", "cyl", "wt"]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-```{r}
-#| message: false
-build_select <- function(x) {
-  rlang::syms(x)
-}
+The simplest engine runs `dplyr::select()` directly on the column names:
 
+```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$cols))
+data <- dplyr::select(mtcars, tidyselect::any_of(unlist(inp$select$keep)))
 print(data)
 ```
 
-Note the use of `!!!` and `rlang::syms()` as we are working with a list of arguments.  In the code above, `build_select(inp$cols)` equates to:
-
+::: {.callout-note}
+An alternate approach uses `rlang::syms()` as follows:
 ```{r}
-build_select(inp$cols)
+#| eval: false
+build_select <- function(x) {
+  rlang::syms(x[["keep"]])
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!build_select(inp$select))
+print(data)
 ```
 
-and the expression
+Here, `build_select()` returns a list of arguments which are spliced into `dplyr::select()` using `!!!`.  The expression
 
 ```{r}
 #| eval: false
-dplyr::select(mtcars, !!!build_select(inp$cols))
+dplyr::select(mtcars, !!!build_select(inp$select))
 ```
 
 is equivalent to writing
@@ -59,6 +65,43 @@ is equivalent to writing
 dplyr::select(mtcars, mpg, cyl, wt)
 ```
 
+Although it achieves the same outcome as using `tidyselect::any_of()`, the tidyselect approach is preferred since we do not need to construct expressions when using `dplyr::select()`.
+:::
+
+### The Use of `any_of()` {#sec-wrangling-anyof}
+
+`tidyselect::any_of()` is a tidy-select helper used to convert character vectors into column selection specifications.
+
+For example, interactive selection works with unquoted column names:
+
+```{r}
+#| eval: false
+dplyr::select(mtcars, mpg, cyl, wt)
+```
+
+but when column names are stored in a vector, teh same code fails:
+
+```{r}
+#| eval: false
+cols <- c("mpg", "cyl", "wt")
+dplyr::select(mtcars, cols)
+```
+
+Using `any_of()` solves the problem:
+
+```{r}
+#| eval: false
+cols <- c("mpg", "cyl", "wt")
+dplyr::select(mtcars, tidyselect::any_of(cols))
+```
+
+`any_of()` silently ignores missing columns, does not evaluate expressions or use data masking, and returns a tidy-select specification, which is just what `select()` expects.
+
+::: {.callout-important}
+### Note
+`any_of()` is different from `!!!syms()`.  The latter splices multiple symbols as expressions, which `any_of()` builds a single column selection object.  Using `!!!syms()` would fail because `select()` expects a tidy-select specification, not multiple specifications.
+:::
+
 ### Dropping Columns
 
 `dplyr::select()` can be used to drop columns.  For example, below the columns *mpg*, *cyl* and *wt* are dropped, whilst all other columns are retained.
@@ -67,52 +110,166 @@ dplyr::select(mtcars, mpg, cyl, wt)
 dplyr::select(mtcars, -mpg, -cyl, -wt)
 ```
 
-To remove columns we can build an expressions using `rlang::call2()` as follows: `rlang::call2("-", rlang::sym(col_name))`.  This creates the expression `-colname` which can be inserted into `dplyr::select()`.  For multiple columns we simply create a list and use `!!!` as follows:
+The same expression can be written as
+
+```{r}
+#| eval: false
+dplyr::select(mtcars, -c(mpg, cyl, wt))
+```
+
+Tidyselect recognizes the `-` operator as a negative instruction.  We can therefore construct a column removal function in the same manner as the column selection function.
 
 ```json
 {
-  "drop_cols": ["mpg", "cyl", "wt"]
+  "select" : {
+    "drop": ["mpg", "cyl", "wt"]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(drop_cols=list("mpg", "cyl", "wt")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
-#| message: false
-build_dropcols <- function(x) {
-  lapply(x, function(y) {
-    rlang::call2("-", rlang::sym(y))
-  })
-}
-
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_dropcols(inp$drop_cols))
+data <- dplyr::select(mtcars, -tidyselect::any_of(unlist(inp$select$drop)))
 print(data)
 ```
 
-When constructing a function to drop columns, *build_dropcols()* returns a list of unevaluated expressions.  Since this is a list, `!!!` is used to splice each element in the `dplyr::select()` function.  In the code above, `build_dropcols(inp$cols)` equates to:
+### Selecting and Dropping Columns
+
+To build a more generalized approach that responds to both keep **and** drop columns we would like to build a function that returns a tidyselect object.  This object could be spliced into `dplyr::select()` for selecting and dropping columns.
+
+If we write this function:
 
 ```{r}
-build_dropcols(inp$cols)
+build_select <- function(x) {
+  list(
+    if (!is.null(x[["keep"]])) tidyselect::any_of(unlist(x[["keep"]])),
+    if (!is.null(x[["drop"]])) -tidyselect::any_of(unlist(x[["drop"]]))
+  )
+}
 ```
 
-and the expression
+we find it works well when we keep columns:
+
+```json
+{
+  "select" : {
+    "keep": ["mpg", "cyl", "wt"]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!build_select(inp$select))
+print(data)
+```
+
+but fails when we try to drop columns:
+
+```json
+{
+  "select" : {
+    "drop": ["mpg", "cyl", "wt"]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| error: true
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!build_select(inp$select))
+```
+
+This is because we cannot compute a negated selection and then inject it.  In order to build a function we cannot return a selection, we must return an expression:
+
+```{r}
+build_select <- function(x) {
+  rtn <- list()
+
+  if (!is.null(x[["keep"]])) {
+    rtn <- c(rtn, list(
+      tidyselect::any_of(unlist(x[["keep"]]))
+    ))
+  }
+  if (!is.null(x[["drop"]])) {
+    rtn <- c(rtn, list(
+      rlang::expr(-tidyselect::any_of(unlist(!!x[["drop"]])))
+    ))
+  }
+  rtn
+}
+```
+
+The expression
 
 ```{r}
 #| eval: false
-dplyr::select(mtcars, !!!build_dropcols(inp$cols))
+rlang::expr(-tidyselect::any_of(unlist(!!x[["drop"]])))
 ```
 
-is equivalent to writing
+is returned as
 
 ```{r}
-#| eval: false
-dplyr::select(mtcars, -mpg, -cyl, -wt)
+#| echo: false
+x <- inp$select
+rlang::expr(-tidyselect::any_of(unlist(!!x[["drop"]])))
 ```
+
+Now, dropping columns will work.
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!build_select(inp$select))
+print(data)
+```
+
+Plus, the two can be used together
+
+```json
+{
+  "select" : {
+    "keep": ["mpg", "cyl", "wt"],
+    "drop": "wt"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"), drop="wt")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::select(mtcars, !!!build_select(inp$select))
+print(data)
+```
+
 
 ## Keeping Unique Rows
 
@@ -120,15 +277,29 @@ dplyr::select(mtcars, -mpg, -cyl, -wt)
 
 `dplyr::distinct()` is used to retain unique rows. It can be used in two manners, returning only the unique values in the specified columns or returning all rows, keeping  just the first row when there are multiple matches.
 
-### Retuning Only Selected Columns
+### Returning Only Selected Columns
 
-`dplyr::distinct()` works in a similar manner to `dplyr::select()`, taking one or more expressions separated by commas to specify columns.  For example, below the unique values from the columns *gear*, *carb* are returned.
+`dplyr::distinct()` appears to work in a similar manner to `dplyr::select()`, taking one or more expressions separated by commas to specify columns.  For example, below the unique values from the columns *gear*, *carb* are returned.
 
 ```{r}
 dplyr::distinct(mtcars, gear, carb)
 ```
 
-A simple example of a JSON input and engine for this approach is shown below.  It is identical to the *select* example.
+It is, however, using data masking to interpret the arguments, as opposed to tidy select.  `dplyr::distinct()` **can** accept an arbitrary expression, not just column names.  Therefore we can write an expression like:
+
+```{r}
+dplyr::distinct(mtcars, gear + carb)
+```
+
+Since we use data masking and not tidy select, the following is not allowed:
+
+```{r}
+#| error: true
+cols <- c("gear", "carb")
+dplyr::distinct(dplyr::any_of(cols))
+```
+
+Therefore, in order to build a `distinct()` step programmatically, we need to evaluate a data-masked expression.  A simple example of a JSON input and engine for this approach is shown below.
 
 ```json
 {
@@ -153,6 +324,8 @@ data <- dplyr::distinct(mtcars, !!!build_distinct(inp$distinct))
 print(data)
 ```
 
+Using symbols for column names represents the simplest possible form of expression.  Although they resemble column selections, these arguments are evaluated as data-masked expressions rather than through tidy select.
+
 ### Retuning All Columns
 
 `dplyr::distinct()` identifies rows with unique values.  If more than one row is satisfied,it will return the first match.  It can return either selected columns, as demonstrated above, or, if argument `.keep_all=TRUE`, will return all columns.
@@ -162,7 +335,6 @@ dplyr::distinct(mtcars, gear, carb, .keep_all = TRUE)
 ```
 
 Our engine can easily be extended to account for the use of `.keep_all` as follows.
-
 
 ```json
 {
@@ -197,7 +369,7 @@ The change in code occurs at `dplyr::distinct()`, and does not affect the way ex
 
 ### `dplyr::rename()`
 
-`dplyr::rename()` changes the names of existing columns using `new_name = old_name` syntax.
+`dplyr::rename()` changes the names of existing columns using `new_name = old_name` syntax.  Rename uses tidy-select format for arguments, taking a named list.
 
 ### Renaming a Single Column
 
@@ -227,8 +399,8 @@ jsonlite::write_json(list(rename=list(old_name="mpg", new_name="miles_per_gallon
 ```{r}
 #| message: false
 build_rename <- function(x) {
-  rlang::set_names(
-    list(rlang::sym(x$old_name)), 
+  setNames(
+    list(x$old_name), 
     x$new_name
   )
 }
@@ -238,7 +410,7 @@ data <- dplyr::rename(mtcars, !!!build_rename(inp$rename))
 print(data)
 ```
 
-`rlang::set_names()` is used to build a named list and pass it as an expression to `dplyr::rename()`.  The code follows the same approach as `select()` and `distinct()`.
+Here we cannot use `tidyselect::any_of()` as it returns a column selection, not a rename mapping.  In order to programmatically build a rename step we must splice the named arguments using `!!!`.  The named arguments are built using `setNames()`.
 
 ### Renaming Multiple Columns
 
@@ -267,8 +439,8 @@ jsonlite::write_json(list(rename=list(mpg="miles_per_gallon", cyl="cylinders", w
 ```{r}
 #| message: false
 build_rename <- function(x) {
-  rlang::set_names(
-    lapply(names(x), rlang::sym),
+  setNames(
+    as.list(names(x)),
     unname(x)
   )
 }
@@ -297,6 +469,8 @@ is equivalent to writing
 #| eval: false
 dplyr::rename(mtcars, miles_per_gallon = mpg, cylinders = cyl, weight = wt)
 ```
+
+Although `rename()` uses tidy-select, it does not accept selections directly.  Instead tidy-select expressions must appear on the righthand side of named arguments the define the new column names.
 
 ## Ordering Rows
 
@@ -337,6 +511,18 @@ data <- dplyr::arrange(mtcars, !!build_arrange(inp$arrange))
 print(data)
 ```
 
+`dplyr::arrange()` takes arguments as data-masked.  Passing a tidy-select construct does not lead to an error the columns are not sorted either.  This version will not error but the data frame will be returned unchanged:
+
+```{r}
+#| message: false
+build_arrange <- function(x) {
+  x
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::arrange(mtcars, !!build_arrange(inp$arrange))
+print(data)
+```
 
 ### Order on Multiple Columns
 

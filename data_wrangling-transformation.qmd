@@ -1,5 +1,7 @@
 # Transformation
 
+The three transformation verbs covered here, `filter()`, `mutate()` and `summarize()` all operate on data-masked arguments.  
+
 ## Filtering Rows
 
 ### `dplyr::filter()`
@@ -164,8 +166,6 @@ inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 data <- dplyr::filter(mtcars, !!build_filter(inp$filter))
 print(data)
 ```
-
-
 
 ```json
 {

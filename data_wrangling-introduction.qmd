@@ -66,6 +66,16 @@ Although many tidyverse verbs rely on tidy evaluation, they do not all accept ar
 
 Functions such as `dplyr::select()`, `dplyr::rename()`, and parts of `tidyr::pivot_longer()` and `tidyr::pivot_wider()` use **tidy-select** semantics.  They do not accept expressions but operate on column specifications.  Tidy-select expressions support helpers such as `starts_with()`, `ends_with()`, `all_of()` and `any_of()`.  Although tidy-select expressions resemble data-masked expressions, they are evaluated using a separate selection mechanism.  Therefore, when building a programmatic interface, tidy-select arguments must be processed differently to data-masked ones.
 
+::: {.callout-important}
+While tidy-select was designed to support column selection, programmatic interfaces typically operate on explicit column names supplied as character vectors.  To support this, tidy-select provides helpers such as `all_of()` and `any_of()`.
+
+These helpers convert character vectors into tidy-select specifications.  When building a selection from externally supplied column names, `all_of()` ensures that all column names exist, while `any_of()` silently ignores missing columns.
+
+Unlike symbol injection (`!!sym()` or `!!!syms()`), tidy-select helpers do not rely on data-masking and not not construct executable expressions.  Instead they produce column selection specifications.
+
+Tidy-select helpers provide a bridge between structured inputs, such as JSON, and tidy-select interfaces, without resorting to expression construction on non-standard evaluation.
+:::
+
 ### Data-Masking Interfaces
 
 Functions such as `dplyr::filter()`, `dplyr::mutate()`, `dplyr::summarise()`, and `dplyr::arrange()` accept **expressions** that are evaluated within a data-masked context.  These expressions may refer to column names, constants and functions, and are evaluated later using tidy evaluation.  Because these arguments represent executable expressions, they require special handling when constructed programmatically.  Typically, they are constructed using symbols (`sym()`, `syms()`) and spliced using `!!` and `!!!`.

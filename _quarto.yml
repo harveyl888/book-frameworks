@@ -17,6 +17,7 @@ book:
     - part: "Data Wrangling"
       chapters:
       - data_wrangling-introduction.qmd
+      - data_wrangling-standard-schema.qmd
       - data_wrangling-selection-and-ordering.qmd
       - data_wrangling-transformation.qmd
       - data_wrangling-reshaping.qmd

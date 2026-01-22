@@ -24,7 +24,8 @@ We can introduce a JSON format for pivot_longer:
 
 ```json
 {
-  "pivot_longer": {
+  "step": "pivot_longer",
+  "parameters": {
     "cols": ["mpg", "hp", "wt"],
     "names_to": "metric",
     "values_to": "value"
@@ -35,7 +36,7 @@ We can introduce a JSON format for pivot_longer:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(pivot_longer=list(cols=list("mpg", "cyl", "wt"), names_to="metric", values_to="value")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="pivot_longer", parameters=list(cols=list("mpg", "cyl", "wt"), names_to="metric", values_to="value")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 Since `pivot_longer()` uses just tidy-select and key-based arguments, no expression building is required and an engine to process `pivot_longer()` is relatively simple.
@@ -43,12 +44,12 @@ Since `pivot_longer()` uses just tidy-select and key-based arguments, no express
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-pivot_cols <- unlist(inp$pivot_longer$cols, use.names = FALSE)
+pivot_cols <- unlist(inp$parameters$cols, use.names = FALSE)
 data <- tidyr::pivot_longer(
     mtcars, 
     cols = tidyselect::all_of(pivot_cols), 
-    names_to = inp$pivot_longer$names_to, 
-    values_to = inp$pivot_longer$values_to
+    names_to = inp$parameters$names_to, 
+    values_to = inp$parameters$values_to
 )
 print(data)
 ```
@@ -77,7 +78,8 @@ In JSON format:
 
 ```json
 {
-  "pivot_wider": {
+  "step": "pivot_wider",
+  "parameters": {
     "cols": ["mpg", "hp", "wt"],
     "names_from": "gear",
     "values_from": "carb"
@@ -88,7 +90,7 @@ In JSON format:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="pivot_wider", parameters=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 Whereas `pivot_longer()` treats `names_to` and `values_to` as literal strings naming new columns, `pivot_wider()` treats `names_from` and `values_from` as tidy-select column identifiers.  As a result `pivot_wider()` requires tidy-select helpers.
@@ -97,12 +99,12 @@ Whereas `pivot_longer()` treats `names_to` and `values_to` as literal strings na
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+pivot_cols <- unlist(inp$parameters$cols, use.names = FALSE)
 data <- tidyr::pivot_wider(
     mtcars, 
     id_cols = tidyselect::all_of(pivot_cols), 
-    names_from = tidyselect::all_of(inp$pivot_wider$names_to), 
-    values_from = tidyselect::all_of(inp$pivot_wider$values_to)
+    names_from = tidyselect::all_of(inp$parameters$names_to), 
+    values_from = tidyselect::all_of(inp$parameters$values_to)
 )
 print(data)
 ```
@@ -123,7 +125,8 @@ In JSON format:
 
 ```json
 {
-  "pivot_wider": {
+  "step": "pivot_wider",
+  "parameters": {
     "cols": ["mpg", "hp", "wt"],
     "names_from": "gear",
     "values_from": "carb",
@@ -135,20 +138,20 @@ In JSON format:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", names_prefix="gear_")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="pivot_wider", parameters=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", names_prefix="gear_")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+pivot_cols <- unlist(inp$parameters$cols, use.names = FALSE)
 data <- tidyr::pivot_wider(
     mtcars, 
     id_cols = tidyselect::all_of(pivot_cols), 
-    names_from = tidyselect::all_of(inp$pivot_wider$names_to), 
-    values_from = tidyselect::all_of(inp$pivot_wider$values_to),
-    names_prefix = inp$pivot_wider$names_prefix
+    names_from = tidyselect::all_of(inp$parameters$names_to), 
+    values_from = tidyselect::all_of(inp$parameters$values_to),
+    names_prefix = inp$parameters$names_prefix
 )
 print(data)
 ```
@@ -165,7 +168,8 @@ In JSON format:
 
 ```json
 {
-  "pivot_wider": {
+  "step": "pivot_wider",
+  "parameters": {
     "cols": ["mpg", "hp", "wt"],
     "names_from": "gear",
     "values_from": "carb",
@@ -177,20 +181,20 @@ In JSON format:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", values_fill=0)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="pivot_wider", parameters=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb", values_fill=0)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+pivot_cols <- unlist(inp$parameters$cols, use.names = FALSE)
 data <- tidyr::pivot_wider(
     mtcars, 
     id_cols = tidyselect::all_of(pivot_cols), 
-    names_from = tidyselect::all_of(inp$pivot_wider$names_to), 
-    values_from = tidyselect::all_of(inp$pivot_wider$values_to),
-    values_fill = inp$pivot_wider$values_fill
+    names_from = tidyselect::all_of(inp$parameters$names_to), 
+    values_from = tidyselect::all_of(inp$parameters$values_to),
+    values_fill = inp$parameters$values_fill
 )
 print(data)
 ```
@@ -199,7 +203,8 @@ If `values_fill` is missing we can apply a detault value using the rlang `%||%` 
 
 ```json
 {
-  "pivot_wider": {
+  "step": "pivot_wider",
+  "parameters": {
     "cols": ["mpg", "hp", "wt"],
     "names_from": "gear",
     "values_from": "carb"
@@ -210,7 +215,7 @@ If `values_fill` is missing we can apply a detault value using the rlang `%||%` 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(pivot_wider=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="pivot_wider", parameters=list(cols=list("mpg", "cyl", "wt"), names_to="gear", values_to="carb")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -219,13 +224,13 @@ default_missing <- -99
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-pivot_cols <- unlist(inp$pivot_wider$cols, use.names = FALSE)
+pivot_cols <- unlist(inp$parameters$cols, use.names = FALSE)
 data <- tidyr::pivot_wider(
     mtcars, 
     id_cols = tidyselect::all_of(pivot_cols), 
-    names_from = tidyselect::all_of(inp$pivot_wider$names_to), 
-    values_from = tidyselect::all_of(inp$pivot_wider$values_to),
-    values_fill = inp$pivot_wider$values_fill %||% default_missing
+    names_from = tidyselect::all_of(inp$parameters$names_to), 
+    values_from = tidyselect::all_of(inp$parameters$values_to),
+    values_fill = inp$parameters$values_fill %||% default_missing
 )
 print(data)
 ```

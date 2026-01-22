@@ -92,7 +92,8 @@ A single engine can be used to join tables.  It works by identifying the type of
 
 ```json
 {
-    "join": {
+    "step": "join",
+    "parameters": {
         "type": "left",
         "table_1": "customers",
         "table_2": "orders",
@@ -106,7 +107,7 @@ A single engine can be used to join tables.  It works by identifying the type of
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(join=list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="join", parameters=list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 and here's an engine, assuming our data frames are stored in a named list, tables, such that:
@@ -135,7 +136,7 @@ build_join <- function(type, tab1, tab2, by) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-join <- inp$join
+join <- inp$parameters
 data <- build_join(
     join$type, 
     tables[[join$table_1]],
@@ -151,7 +152,8 @@ The same engine can be used to process any of the joins.  For example:
 
 ```json
 {
-    "join": {
+    "step": "join",
+    "parameters": {
         "type": "anti",
         "table_1": "customers",
         "table_2": "orders",
@@ -165,12 +167,13 @@ The same engine can be used to process any of the joins.  For example:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(join=list(type="anti", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="join", parameters=list(type="anti", table_1="customers", table_2="orders", by=list(customer_id="customer_id"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
+join <- inp$parameters
 data <- build_join(
     join$type, 
     tables[[join$table_1]],
@@ -196,37 +199,40 @@ tables[["payments"]] <- payments
 
 ```json
 {
-    "joins": [
-        {
-            "type": "left",
-            "table_1": "customers",
-            "table_2": "orders",
-            "by" : {
-                "customer_id": "customer_id"
+    "step": "join",
+    "parameters": {
+        "join_steps": [
+            {
+                "type": "left",
+                "table_1": "customers",
+                "table_2": "orders",
+                "by" : {
+                    "customer_id": "customer_id"
+                }
+            },
+            {
+                "type": "left",
+                "table_2": "payments",
+                "by" : {
+                    "order_id": "order_id"
+                }
             }
-        },
-        {
-            "type": "left",
-            "table_2": "payments",
-            "by" : {
-                "order_id": "order_id"
-            }
-        }
-    ]
+        ]
+    }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(joins=list(list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id")), list(type="left", table_2="payments", by=list(order_id="order_id")))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="join", parameters=list(join_steps=list(list(type="left", table_1="customers", table_2="orders", by=list(customer_id="customer_id")), list(type="left", table_2="payments", by=list(order_id="order_id"))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 data <- data.frame()
-for (j in inp$joins) {
+for (j in inp$parameters$join_steps) {
     if (is.null(j[["table_1"]])) {
         tab1 <- data
     } else {

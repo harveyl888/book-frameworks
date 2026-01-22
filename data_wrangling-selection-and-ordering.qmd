@@ -18,7 +18,8 @@ A select step is relatively simple to implement since `dplyr::select()` operates
 
 ```json
 {
-  "select" : {
+  "step": "select",
+  "parameters" : {
     "keep": ["mpg", "cyl", "wt"]
   }
 }
@@ -27,14 +28,14 @@ A select step is relatively simple to implement since `dplyr::select()` operates
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 The simplest engine runs `dplyr::select()` directly on the column names:
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, tidyselect::any_of(unlist(inp$select$keep)))
+data <- dplyr::select(mtcars, tidyselect::any_of(unlist(inp$parameters$keep)))
 print(data)
 ```
 
@@ -47,7 +48,7 @@ build_select <- function(x) {
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$select))
+data <- dplyr::select(mtcars, !!!build_select(inp$parameters))
 print(data)
 ```
 
@@ -55,7 +56,7 @@ Here, `build_select()` returns a list of arguments which are spliced into `dplyr
 
 ```{r}
 #| eval: false
-dplyr::select(mtcars, !!!build_select(inp$select))
+dplyr::select(mtcars, !!!build_select(inp$parameters))
 ```
 
 is equivalent to writing
@@ -121,7 +122,8 @@ Tidyselect recognizes the `-` operator as a negative instruction.  We can theref
 
 ```json
 {
-  "select" : {
+  "step": "select",
+  "parameters" : {
     "drop": ["mpg", "cyl", "wt"]
   }
 }
@@ -130,12 +132,12 @@ Tidyselect recognizes the `-` operator as a negative instruction.  We can theref
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, -tidyselect::any_of(unlist(inp$select$drop)))
+data <- dplyr::select(mtcars, -tidyselect::any_of(unlist(inp$parameters$drop)))
 print(data)
 ```
 
@@ -158,7 +160,8 @@ we find it works well when we keep columns:
 
 ```json
 {
-  "select" : {
+  "step": "select",
+  "parameters" : {
     "keep": ["mpg", "cyl", "wt"]
   }
 }
@@ -167,12 +170,12 @@ we find it works well when we keep columns:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(keep=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$select))
+data <- dplyr::select(mtcars, !!!build_select(inp$parameters))
 print(data)
 ```
 
@@ -180,7 +183,8 @@ but fails when we try to drop columns:
 
 ```json
 {
-  "select" : {
+  "step": "select",
+  "parameters" : {
     "drop": ["mpg", "cyl", "wt"]
   }
 }
@@ -189,13 +193,13 @@ but fails when we try to drop columns:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| error: true
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$select))
+data <- dplyr::select(mtcars, !!!build_select(inp$parameters))
 ```
 
 This is because we cannot compute a negated selection and then inject it.  In order to build a function we cannot return a selection, we must return an expression:
@@ -229,7 +233,7 @@ is returned as
 
 ```{r}
 #| echo: false
-x <- inp$select
+x <- inp$parameters
 rlang::expr(-tidyselect::any_of(unlist(!!x[["drop"]])))
 ```
 
@@ -238,12 +242,12 @@ Now, dropping columns will work.
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(drop=list("mpg", "cyl", "wt"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$select))
+data <- dplyr::select(mtcars, !!!build_select(inp$parameters))
 print(data)
 ```
 
@@ -251,7 +255,8 @@ Plus, the two can be used together
 
 ```json
 {
-  "select" : {
+  "step": "select",
+  "parameters" : {
     "keep": ["mpg", "cyl", "wt"],
     "drop": "wt"
   }
@@ -261,15 +266,14 @@ Plus, the two can be used together
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(select=list(keep=list("mpg", "cyl", "wt"), drop="wt")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="select", parameters=list(keep=list("mpg", "cyl", "wt"), drop="wt")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::select(mtcars, !!!build_select(inp$select))
+data <- dplyr::select(mtcars, !!!build_select(inp$parameters))
 print(data)
 ```
-
 
 ## Keeping Unique Rows
 
@@ -303,24 +307,27 @@ Therefore, in order to build a `distinct()` step programmatically, we need to ev
 
 ```json
 {
-  "distinct": ["gear", "carb"]
+  "step": "distinct",
+  "parameters": {
+    "cols": ["gear", "carb"]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(distinct=list("carb", "gear")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="distinct", parameters=list(cols=list("carb", "gear"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 build_distinct <- function(x) {
-  rlang::syms(x)
+  rlang::syms(x$cols)
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::distinct(mtcars, !!!build_distinct(inp$distinct))
+data <- dplyr::distinct(mtcars, !!!build_distinct(inp$parameters))
 print(data)
 ```
 
@@ -338,28 +345,28 @@ Our engine can easily be extended to account for the use of `.keep_all` as follo
 
 ```json
 {
-  "distinct": {
+  "step": "distinct",
+  "parameters": {
     "cols": ["gear", "carb"],
     "keep_all": true
   }
-  
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(distinct=list(cols=list("carb", "gear"), keep_all=TRUE)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="distinct", parameters=list(cols=list("carb", "gear"), keep_all=TRUE)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 build_distinct <- function(x) {
-  rlang::syms(x)
+  rlang::syms(x$cols)
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::distinct(mtcars, !!!build_distinct(inp$distinct$cols), .keep_all = isTRUE(inp$distinct$keep_all))
+data <- dplyr::distinct(mtcars, !!!build_distinct(inp$parameters), .keep_all = isTRUE(inp$parameters$keep_all))
 print(data)
 ```
 
@@ -383,7 +390,8 @@ In JSON format this can be represented as:
 
 ```json
 {
-  "rename": {
+  "step": "rename",
+  "parameters": {
     "old_name": "mpg",
     "new_name": "miles_per_gallon"
   }
@@ -393,7 +401,7 @@ In JSON format this can be represented as:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(rename=list(old_name="mpg", new_name="miles_per_gallon")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="rename", parameters=list(old_name="mpg", new_name="miles_per_gallon")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -406,7 +414,7 @@ build_rename <- function(x) {
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::rename(mtcars, !!!build_rename(inp$rename))
+data <- dplyr::rename(mtcars, !!!build_rename(inp$parameters))
 print(data)
 ```
 
@@ -422,7 +430,8 @@ dplyr::rename(mtcars, miles_per_gallon = mpg, cylinders = cyl, weight = wt)
 
 ```json
 {
-  "rename": {
+  "step": "rename",
+  "parameters": {
     "mpg": "miles_per_gallon",
     "cyl": "cylinders",
     "wt": "weight"
@@ -433,7 +442,7 @@ dplyr::rename(mtcars, miles_per_gallon = mpg, cylinders = cyl, weight = wt)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(rename=list(mpg="miles_per_gallon", cyl="cylinders", wt="weight")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="rename", parameters=list(mpg="miles_per_gallon", cyl="cylinders", wt="weight")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -446,21 +455,21 @@ build_rename <- function(x) {
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::rename(mtcars, !!!build_rename(inp$rename))
+data <- dplyr::rename(mtcars, !!!build_rename(inp$parameters))
 print(data)
 ```
 
 *build_rename(inp$rename)* returns:
 
 ```{r}
-build_rename(inp$rename)
+build_rename(inp$parameters)
 ```
 
 and 
 
 ```{r}
 #| eval: false
-dplyr::rename(mtcars, !!!build_rename(inp$rename))
+dplyr::rename(mtcars, !!!build_rename(inp$parameters))
 ```
 
 is equivalent to writing
@@ -468,6 +477,41 @@ is equivalent to writing
 ```{r}
 #| eval: false
 dplyr::rename(mtcars, miles_per_gallon = mpg, cylinders = cyl, weight = wt)
+```
+
+An alternative, more verbos approach to multiple column renaming is:
+
+```json
+{
+  "step": "rename",
+  "parameters": {
+    "rename_mapping": [
+      {"old_name": "mpg", "new_name": "miles_per_gallon"},
+      {"old_name": "cyl", "new_name": "cylinders"},
+      {"old_name": "wt", "new_name": "weight"}
+    ]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="rename", parameters=list(rename_mapping=list(list(old_name="mpg", new_name="miles_per_gallon"), list(old_name="cyl", new_name="cylinders"), list(old_name="wt", new_name="weight")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| message: false
+build_rename <- function(x) {
+  setNames(
+    lapply(x$rename_mapping, function(y) y$old_name),
+    sapply(x$rename_mapping, function(y) y$new_name)
+  )
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+data <- dplyr::rename(mtcars, !!!build_rename(inp$parameters))
+print(data)
 ```
 
 Although `rename()` uses tidy-select, it does not accept selections directly.  Instead tidy-select expressions must appear on the righthand side of named arguments the define the new column names.
@@ -490,24 +534,27 @@ The JSON structure and engine look as follows:
 
 ```json
 {
-  "arrange": "carb"
+  "step": "arrange",
+  "parameters": {
+    "col": "carb"
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(arrange="carb"), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="arrange", parameters=list(col="carb")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 build_arrange <- function(x) {
-  rlang::sym(x)
+  rlang::sym(x$col)
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::arrange(mtcars, !!build_arrange(inp$arrange))
+data <- dplyr::arrange(mtcars, !!build_arrange(inp$parameters))
 print(data)
 ```
 
@@ -516,11 +563,11 @@ print(data)
 ```{r}
 #| message: false
 build_arrange <- function(x) {
-  x
+  x$col
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::arrange(mtcars, !!build_arrange(inp$arrange))
+data <- dplyr::arrange(mtcars, !!build_arrange(inp$parameters))
 print(data)
 ```
 
@@ -536,24 +583,27 @@ The JSON structure and engine look as follows:
 
 ```json
 {
-  "arrange": ["carb", "mpg"]
+  "step": "arrange",
+  "parameters": {
+    "cols": ["carb", "mpg"]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(arrange=list("carb", "mpg")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="arrange", parameters=list(cols=list("carb", "mpg"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 build_arrange <- function(x) {
-  rlang::syms(x)
+  rlang::syms(x$cols)
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::arrange(mtcars, !!!build_arrange(inp$arrange))
+data <- dplyr::arrange(mtcars, !!!build_arrange(inp$parameters))
 print(data)
 ```
 
@@ -576,31 +626,36 @@ A JSON format and engine could look like:
 
 ```json
 {
-  "arrange" : [
-    {
-      "column": "gear",
-      "direction": "asc"
-    },
-    {
-      "column": "cyl",
-      "direction": "desc"
-    },
-    {
-      "column": "mpg"
-    }
-  ]}
+  "step": "arrange",
+  "parameters": {
+    "vars" : [
+      {
+        "column": "gear",
+        "direction": "asc"
+      },
+      {
+        "column": "cyl",
+        "direction": "desc"
+      },
+      {
+        "column": "mpg"
+      }
+    ]
+  }
+}
+
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(arrange=list(list(column="gear", direction="asc"), list(column="cyl", direction="desc"), list(column="mpg"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="arrange", parameters=list(vars=list(list(column="gear", direction="asc"), list(column="cyl", direction="desc"), list(column="mpg")))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 #| message: false
 build_arrange <- function(x) {
-  lapply(x, function(y) {
+  lapply(x$vars, function(y) {
     if (isTRUE(y[['direction']] == "desc")) {
       rlang::call2("desc", rlang::sym(y[['column']]), .ns = "dplyr")
     } else { 
@@ -610,21 +665,21 @@ build_arrange <- function(x) {
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::arrange(mtcars, !!!build_arrange(inp$arrange))
+data <- dplyr::arrange(mtcars, !!!build_arrange(inp$parameters))
 print(data)
 ```
 
 `build_arrange()` takes a list for ordering.  Each element is a list containing a column name and optional direction for sorting with the default being *ascending*.  When sorted as *ascending** `sym(column)` is returned and when sorted as *descending* `desc(sym(column))` is returned.  The use of `.ns` in `rlang::call2()` ensures that the namespace `dplyr` is prepended to `desc()`.  `build_arrange(inp$arrange)` returns:
 
 ```{r}
-build_arrange(inp$arrange)
+build_arrange(inp$parameters)
 ```
 
 and 
 
 ```{r}
 #| eval: false
-dplyr::arrange(mtcars, !!!build_arrange(inp$arrange))
+dplyr::arrange(mtcars, !!!build_arrange(inp$parameters))
 ```
 
 is equivalent to writing

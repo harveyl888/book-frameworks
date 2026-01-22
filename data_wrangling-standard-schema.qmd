@@ -1,0 +1,42 @@
+# Standardizing the Schema
+
+A data wrangling parser could benefit from a standard way of representing inputs.  A generalized format separates the **what** from the **how**.  In this case, it means separating **what** the data manipulation step is from **how** the step is performed.  As a JSON representation the following is one example of this approach:
+
+```json
+{
+    "step": "select",
+    "parameters": {...}
+}
+```
+
+Here, *step* represents the tidyverse verb and *parameters* holds the arguments, essentially mirroring the tidyverse.
+
+This approach also benefits from stacking steps, for example:
+
+```json
+[
+    {
+        "step": "select",
+        "parameters": {...}
+    },
+    {
+        "step": "filter",
+        "parameters": {...}
+    }
+]
+```
+
+which maps to the tidyverse piping approach:
+
+```{r}
+#| eval: false
+data %>%
+  select(...) %>%
+  filter(...)
+```
+
+In addition, this approach
+
+-  order is explicit
+-  steps are self-describing
+-  each step can be validated separately

@@ -20,7 +20,8 @@ The filter itself can be split into a column identifier, an operator and a value
 
 ```json
 {
-  "filter": {
+  "step": "filter",
+  "parameters": {
     "col": "mpg",
     "operator": ">",
     "value": 30
@@ -31,7 +32,7 @@ The filter itself can be split into a column identifier, an operator and a value
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 
@@ -51,21 +52,21 @@ build_filter <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-data <- dplyr::filter(mtcars, !!build_filter(inp$filter))
+data <- dplyr::filter(mtcars, !!build_filter(inp$parameters))
 print(data)
 ```
 
 Here, we build an expression using the name of the column (`mpg`).  *build_filter(inp$filter)* returns:
 
 ```{r}
-build_filter(inp$filter)
+build_filter(inp$parameters)
 ```
 
 and
 
 ```{r}
 #| eval: false
-dplyr::filter(mtcars, !!build_filter(inp$filter))
+dplyr::filter(mtcars, !!build_filter(inp$parameters))
 ```
 
 is equivalent to writing
@@ -89,7 +90,8 @@ dplyr::filter(mtcars, cyl %in% c(4, 5, 6))
 
 ```json
 {
-  "filter": {
+  "step": "filter",
+  "parameters": {
     "col": "cyl",
     "operator": "in",
     "value": [4, 5, 6]
@@ -100,7 +102,7 @@ dplyr::filter(mtcars, cyl %in% c(4, 5, 6))
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(col="cyl", operator="in", value=list(4,5,6))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(col="cyl", operator="in", value=list(4,5,6))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -112,7 +114,7 @@ build_filter <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-data <- dplyr::filter(mtcars, !!build_filter(inp$filter))
+data <- dplyr::filter(mtcars, !!build_filter(inp$parameters))
 print(data)
 ```
 
@@ -146,7 +148,8 @@ The examples discussed in @sec-filter-single-value and @sec-filter-list-values c
 
 ```json
 {
-  "filter": {
+  "step": "filter",
+  "parameters": {
     "col": "mpg",
     "operator": ">",
     "value": 30
@@ -157,19 +160,20 @@ The examples discussed in @sec-filter-single-value and @sec-filter-list-values c
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-data <- dplyr::filter(mtcars, !!build_filter(inp$filter))
+data <- dplyr::filter(mtcars, !!build_filter(inp$parameters))
 print(data)
 ```
 
 ```json
 {
-  "filter": {
+  "step": "filter",
+  "parameters": {
     "col": "cyl",
     "operator": "in",
     "value": [4, 5, 6]
@@ -180,13 +184,13 @@ print(data)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(col="mpg", operator=">", value=30)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-data <- dplyr::filter(mtcars, !!build_filter(inp$filter))
+data <- dplyr::filter(mtcars, !!build_filter(inp$parameters))
 print(data)
 ```
 
@@ -217,28 +221,32 @@ dplyr::filter(mtcars, carb == 2) |>
   dplyr::filter(mtcars, mpg > 30)
 ```
 
+To represent this in our JSON format we can store an array of steps, where each is an individual filter step.
 
 ```json
 {
-  "filter" : [
-    {
-      "col": "carb",
-      "operator": "==",
-      "value": 2
-    },
-    {
-      "col": "mpg",
-      "operator": ">",
-      "value": 30
-    }
-  ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps" : [
+      {
+        "col": "carb",
+        "operator": "==",
+        "value": 2
+      },
+      {
+        "col": "mpg",
+        "operator": ">",
+        "value": 30
+      }
+    ]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30)))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -261,7 +269,7 @@ build_filter <- function(x) {
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 data <- mtcars
-for (filter_step in inp$filter) {
+for (filter_step in inp$parameters$filter_steps) {
   data <- dplyr::filter(data, !!build_filter(filter_step))
 }
 print(data)
@@ -279,25 +287,28 @@ dplyr::filter(mtcars, carb == 2 | mpg > 30)
 
 ```json
 {
-  "filter" : [
-    {
-      "col": "carb",
-      "operator": "==",
-      "value": 2
-    },
-    {
-      "col": "mpg",
-      "operator": ">",
-      "value": 30
-    }
-  ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps" : [
+      {
+        "col": "carb",
+        "operator": "==",
+        "value": 2
+      },
+      {
+        "col": "mpg",
+        "operator": ">",
+        "value": 30
+      }
+    ]
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30)))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -319,31 +330,31 @@ build_filter <- function(x) {
 
 combine_filters_or <- function(x) {
   ## build each condition
-  filter_steps <- lapply(x, function(y) {
+  build_filter_steps <- lapply(x, function(y) {
     build_filter(y)
   })
 
   ## combine conditions with 'OR'
   Reduce(
     f = function(lhs, rhs) rlang::call2("|", lhs, rhs),
-    x = filter_steps
+    x = build_filter_steps
   )
 }
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-data <- dplyr::filter(mtcars, !!combine_filters_or(inp$filter))
+data <- dplyr::filter(mtcars, !!combine_filters_or(inp$parameters$filter_steps))
 print(data)
 ```
 
 Here we build a separate expression for each filter and then combine them using `Reduce()` to generate a single `OR` expression.  The individual expressions are:
 
 ```{r}
-x <- inp$filter
-filter_steps <- lapply(x, function(y) {
+x <- inp$parameters$filter_steps
+build_filter_steps <- lapply(x, function(y) {
   build_filter(y)
 })
-print(filter_steps)
+print(build_filter_steps)
 ```
 
 and combined:
@@ -351,7 +362,7 @@ and combined:
 ```{r}
 Reduce(
   f = function(lhs, rhs) rlang::call2("|", lhs, rhs),
-  x = filter_steps
+  x = build_filter_steps
 )
 ```
 
@@ -360,7 +371,7 @@ Reduce(
 `purrr::reduce()` may be used in place of `Reduce()`.  It differs in order of arguments (data before function to accommodate piping).
 
 ```{r}
-purrr::reduce(filter_steps, \(lhs, rhs) rlang::call2("|", lhs, rhs))
+purrr::reduce(build_filter_steps, \(lhs, rhs) rlang::call2("|", lhs, rhs))
 ```
 
 ::: {.callout-note}
@@ -418,18 +429,21 @@ dplyr::filter(mtcars, (carb == 2 | mpg > 30) & cyl == 4)
 
 ```json
 {
-  "filter": {
-    "logic": "AND",
-    "steps": [
-      {
-        "logic": "OR",
-        "steps": [
-          {"col": "carb", "operator": "==", "value": 2},
-          {"col": "mpg", "operator": ">", "value": 30}
-        ]
-      },
-      {"col": "cyl", "operator": "==", "value": 4}
-    ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps": {
+      "logic": "AND",
+      "steps": [
+        {
+          "logic": "OR",
+          "steps": [
+            {"col": "carb", "operator": "==", "value": 2},
+            {"col": "mpg", "operator": ">", "value": 30}
+          ]
+        },
+        {"col": "cyl", "operator": "==", "value": 4}
+      ]
+    }
   }
 }
 ```
@@ -437,7 +451,7 @@ dplyr::filter(mtcars, (carb == 2 | mpg > 30) & cyl == 4)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(logic="AND", steps=list(list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30))), list(col="cyl",operator="==",value=4)))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(logic="AND", steps=list(list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30))), list(col="cyl",operator="==",value=4))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -461,11 +475,11 @@ build_filter <- function(x) {
     rlang::call2(operators[x$operator], rlang::sym(x$col), x$value)
   } else if (!is.null(x$steps)) {
     ## combine sub-filters through recursion
-    filter_steps <- lapply(x$steps, build_filter)
+    build_filter_steps <- lapply(x$steps, build_filter)
     op <- logic_operators[x$logic]
     Reduce(
       function(lhs, rhs) rlang::call2(op, lhs, rhs),
-      filter_steps
+      build_filter_steps
     ) 
   } else {
     stop("Invalid JSON")
@@ -474,7 +488,7 @@ build_filter <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_filter(inp$filter)
+expr <- build_filter(inp$parameters$filter_steps)
 data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
@@ -492,14 +506,14 @@ build_individual_expressions <- function(x) {
   }
 }
 
-individual_expressions <- build_individual_expressions(inp$filter)
+individual_expressions <- build_individual_expressions(inp$parameters$filter_steps)
 print(individual_expressions)
 ```
 
 and the final expression is
 
 ```{r}
-expr <- build_filter(inp$filter)
+expr <- build_filter(inp$parameters$filter_steps)
 print(expr)
 ```
 
@@ -507,18 +521,21 @@ Changing the JSON hierarchy leads to a different expression tree and hence diffe
 
 ```json
 {
-  "filter": {
-    "logic": "OR",
-    "steps": [
-      {"col": "carb", "operator": "==", "value": 2},
-      {
-        "logic": "AND",
-        "steps": [
-          {"col": "mpg", "operator": ">", "value": 30},
-          {"col": "cyl", "operator": "==", "value": 4}
-        ]
-      }
-    ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps": {
+      "logic": "OR",
+      "steps": [
+        {"col": "carb", "operator": "==", "value": 2},
+        {
+          "logic": "AND",
+          "steps": [
+            {"col": "mpg", "operator": ">", "value": 30},
+            {"col": "cyl", "operator": "==", "value": 4}
+          ]
+        }
+      ]
+    }
   }
 }
 ```
@@ -526,13 +543,13 @@ Changing the JSON hierarchy leads to a different expression tree and hence diffe
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(logic="AND", steps=list(list(col="mpg",operator=">",value=30), list(col="cyl",operator="==",value=4)))))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(logic="AND", steps=list(list(col="mpg",operator=">",value=30), list(col="cyl",operator="==",value=4))))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_filter(inp$filter)
+expr <- build_filter(inp$parameters$filter_steps)
 data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
@@ -545,24 +562,26 @@ This approach naturally extends to the use of `NOT` to negate a condition.  `NOT
 dplyr::filter(mtcars, !(carb == 2 | mpg > 30) & cyl == 4)
 ```
 
-
 ```json
 {
-  "filter": {
-    "logic": "AND",
-    "steps": [
-      {
-        "logic": "NOT",
-        "steps": {
-          "logic": "OR",
-          "steps": [
-            {"col": "carb", "operator": "==", "value": 2},
-            {"col": "mpg", "operator": ">", "value": 30}
-          ]
-        }
-      },
-      {"col": "cyl", "operator": "==", "value": 4}
-    ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps": {
+      "logic": "AND",
+      "steps": [
+        {
+          "logic": "NOT",
+          "steps": {
+            "logic": "OR",
+            "steps": [
+              {"col": "carb", "operator": "==", "value": 2},
+              {"col": "mpg", "operator": ">", "value": 30}
+            ]
+          }
+        },
+        {"col": "cyl", "operator": "==", "value": 4}
+      ]
+    }
   }
 }
 ```
@@ -570,7 +589,7 @@ dplyr::filter(mtcars, !(carb == 2 | mpg > 30) & cyl == 4)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(logic="AND", steps=list(list(logic="NOT", steps=list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30)))), list(col="cyl",operator="==",value=4)))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(logic="AND", steps=list(list(logic="NOT", steps=list(logic="OR", steps=list(list(col="carb",operator="==",value=2), list(col="mpg",operator=">",value=30)))), list(col="cyl",operator="==",value=4))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -601,12 +620,12 @@ build_filter <- function(x) {
   
   if (x$logic %in% names(logic_operators)) {
     ## combine sub-filters through recursion
-    filter_steps <- lapply(x$steps, build_filter)
+    build_filter_steps <- lapply(x$steps, build_filter)
     op <- logic_operators[x$logic]
     return(
       Reduce(
         function(lhs, rhs) rlang::call2(op, lhs, rhs),
-        filter_steps
+        build_filter_steps
       ) 
     )
   } else {
@@ -616,7 +635,7 @@ build_filter <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_filter(inp$filter)
+expr <- build_filter(inp$parameters$filter_steps)
 data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
@@ -674,12 +693,15 @@ A solution is to check if `value` is a column name and respond accordingly.  A s
 
 ```json
 {
-  "filter": {
-    "logic": "AND",
-    "steps": [
-      {"col": "cyl", "operator": ">", "value": "drat"},
-      {"col": "wt", "operator": ">", "value": 4}
-    ]
+  "step": "filter",
+  "parameters": {
+    "filter_steps": {
+      "logic": "AND",
+      "steps": [
+        {"col": "cyl", "operator": ">", "value": "drat"},
+        {"col": "wt", "operator": ">", "value": 4}
+      ]
+    }
   }
 }
 ```
@@ -687,7 +709,7 @@ A solution is to check if `value` is a column name and respond accordingly.  A s
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(logic="AND", steps=list(list(col="cyl", operator=">", value="drat"), list(col="wt", operator=">", value=4)))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(logic="AND", steps=list(list(col="cyl", operator=">", value="drat"), list(col="wt", operator=">", value=4))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -716,11 +738,11 @@ build_filter <- function(x, col_names) {
     rlang::call2(operators[x$operator], rlang::sym(x$col), value)
   } else if (!is.null(x$steps)) {
     ## combine sub-filters through recursion
-    filter_steps <- lapply(x$steps, build_filter, col_names)
+    build_filter_steps <- lapply(x$steps, build_filter, col_names)
     op <- logic_operators[x$logic]
     Reduce(
       function(lhs, rhs) rlang::call2(op, lhs, rhs),
-      filter_steps
+      build_filter_steps
     ) 
   } else {
     stop("Invalid JSON")
@@ -729,7 +751,7 @@ build_filter <- function(x, col_names) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_filter(inp$filter, names(mtcars))
+expr <- build_filter(inp$parameters$filter_steps, names(mtcars))
 data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
@@ -738,26 +760,29 @@ The logic included to determine if a value is a column name or scalar is fragile
 
 ```json
 {
-  "filter": {
-    "logic": "AND",
-    "steps": [
-      {
-        "col": "cyl", 
-        "operator": ">", 
-        "value": {
-          "type": "column",
-          "val": "drat"
+  "step": "filter",
+  "parameters": {
+    "filter_steps": {
+      "logic": "AND",
+      "steps": [
+        {
+          "col": "cyl", 
+          "operator": ">", 
+          "value": {
+            "type": "column",
+            "val": "drat"
+          }
+        },
+        {
+          "col": "wt", 
+          "operator": ">", 
+          "value": {
+            "type": "scalar",
+            "val": 4
+          }
         }
-      },
-      {
-        "col": "wt", 
-        "operator": ">", 
-        "value": {
-          "type": "scalar",
-          "val": 4
-        }
-      }
-    ]
+      ]
+    }
   }
 }
 ```
@@ -765,7 +790,7 @@ The logic included to determine if a value is a column name or scalar is fragile
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(filter=list(logic="AND", steps=list(list(col="cyl", operator=">", value=list(type="column", val="drat")), list(col="wt", operator=">", value=list(type="scalar", val=4))))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="filter", parameters=list(filter_steps=list(logic="AND", steps=list(list(col="cyl", operator=">", value=list(type="column", val="drat")), list(col="wt", operator=">", value=list(type="scalar", val=4)))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -798,11 +823,11 @@ build_filter <- function(x, col_names) {
     rlang::call2(operators[x$operator], rlang::sym(x$col), value)
   } else if (!is.null(x$steps)) {
     ## combine sub-filters through recursion
-    filter_steps <- lapply(x$steps, build_filter, col_names)
+    build_filter_steps <- lapply(x$steps, build_filter, col_names)
     op <- logic_operators[x$logic]
     Reduce(
       function(lhs, rhs) rlang::call2(op, lhs, rhs),
-      filter_steps
+      build_filter_steps
     ) 
   } else {
     stop("Invalid JSON")
@@ -811,7 +836,7 @@ build_filter <- function(x, col_names) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_filter(inp$filter, names(mtcars))
+expr <- build_filter(inp$parameters$filter_steps, names(mtcars))
 data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
@@ -834,7 +859,8 @@ The JSON implementation can be something like:
 
 ```json
 {
-  "mutate": {
+  "step": "mutate",
+  "parameters": {
     "new_col_name": "new_col",
     "value": 3
   }
@@ -844,7 +870,7 @@ The JSON implementation can be something like:
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(mutate=list(new_col_name="new_col", "value"=3)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="mutate", parameters=list(new_col_name="new_col", "value"=3)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 When running programmatically, the name value operator, `:=` is used in place of `=`.  Since this is a simple `mutate()` step we can build the lefthand and righthand sides directly into the `mutate()` function.
@@ -853,7 +879,7 @@ When running programmatically, the name value operator, `:=` is used in place of
 library(rlang)
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
-data <- dplyr::mutate(mtcars, !!inp$mutate$new_col_name := inp$mutate$value)
+data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := inp$parameters$value)
 print(data)
 ```
 
@@ -867,7 +893,7 @@ build_mutate <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate(inp$mutate)
+expr <- build_mutate(inp$parameters)
 data <- dplyr::mutate(mtcars, !!expr)
 ```
 
@@ -922,7 +948,8 @@ dplyr::mutate(mtcars, new_col = wt / hp)
 
 ```json
 {
-  "mutate": {
+  "step": "mutate"
+  "parameters": {
     "new_col_name": "new_col",
     "operator": "/",
     "lhs": "wt",
@@ -934,7 +961,7 @@ dplyr::mutate(mtcars, new_col = wt / hp)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(mutate=list(new_col_name="new_col", "operator"="/", lhs="wt", rhs="hp")), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="mutate", parameters=list(new_col_name="new_col", "operator"="/", lhs="wt", rhs="hp")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r, filename="building an expression"}
@@ -944,8 +971,8 @@ build_mutate <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate(inp$mutate)
-data <- dplyr::mutate(mtcars, !!inp$mutate$new_col_name := !!expr)
+expr <- build_mutate(inp$parameters)
+data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!expr)
 print(data)
 ```
 
@@ -959,7 +986,7 @@ build_mutate_list <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate_list(inp$mutate)
+expr <- build_mutate_list(inp$parameters)
 data <- dplyr::mutate(mtcars, !!!expr)
 print(data)
 ```
@@ -1005,21 +1032,24 @@ To include this in a JSON expression, we can consider recursively breaking the e
 
 ```json
 {
-  "new_col_name": "new_col",
-  "operator": "+",
-  "lhs": {
-    "operator": "*",
-    "lhs": "mpg",
-    "rhs": "cyl"
-  },
-  "rhs": 5
+  "step": "mutate",
+  "parameters": {
+    "new_col_name": "new_col",
+    "operator": "+",
+    "lhs": {
+      "operator": "*",
+      "lhs": "mpg",
+      "rhs": "cyl"
+    },
+    "rhs": 5
+  }
 }
 ```
 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs="mpg", rhs="cyl"), rhs=5), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="mutate", parameters=list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs="mpg", rhs="cyl"), rhs=5)), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 and the engine would be:
@@ -1051,8 +1081,8 @@ build_mutate <- function(x, col_names = c()) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate(inp, names(mtcars))
-data <- dplyr::mutate(mtcars, !!inp$new_col_name := !!expr)
+expr <- build_mutate(inp$parameters, names(mtcars))
+data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!expr)
 print(data)
 ```
 
@@ -1060,22 +1090,25 @@ The recursive function `build_mutate()` is similar in nature to the `build_filte
 
 ```json
 {
-  "new_col_name": "new_col",
-  "operator": "+",
-  "lhs": {
-    "operator": "*",
+  "step": "mutate",
+  "parameters": {
+    "new_col_name": "new_col",
+    "operator": "+",
     "lhs": {
-      "type": "column",
-      "val": "mpg"
+      "operator": "*",
+      "lhs": {
+        "type": "column",
+        "val": "mpg"
+      },
+      "rhs": {
+        "type": "column",
+        "val": "cyl"
+      }
     },
     "rhs": {
-      "type": "column",
-      "val": "cyl"
+      "type": "literal",
+      "value": 5
     }
-  },
-  "rhs": {
-    "type": "literal",
-    "value": 5
   }
 }
 ```
@@ -1083,7 +1116,7 @@ The recursive function `build_mutate()` is similar in nature to the `build_filte
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs=list(type="column", val="mpg"), rhs=list(type="column", value="cyl")), rhs=list(type="literal", val=5)), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="mutate", parameters=list(new_col_name="new_col", operator="+", lhs=list(operator="*", lhs=list(type="column", val="mpg"), rhs=list(type="column", value="cyl")), rhs=list(type="literal", val=5))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 and the engine becomes
@@ -1109,8 +1142,8 @@ build_mutate <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate(inp)
-data <- dplyr::mutate(mtcars, !!inp$new_col_name := !!expr)
+expr <- build_mutate(inp$parameters)
+data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!expr)
 print(data)
 ```
 
@@ -1150,8 +1183,8 @@ build_mutate <- function(x) {
 
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
-expr <- build_mutate(inp)
-data <- dplyr::mutate(mtcars, !!inp$new_col_name := !!expr)
+expr <- build_mutate(inp$parameters)
+data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!expr)
 print(data)
 ```
 
@@ -1203,7 +1236,8 @@ dplyr::summarize(mtcars, avg_mpg = mean(mpg), .by = c(cyl, gear))
 
 ```json
 {
-  "summarize": {
+  "step": "summarize",
+  "parameters": {
     "by": ["cyl", "gear"],
     "metrics": {
       "name": "avg_mpg",
@@ -1217,7 +1251,7 @@ dplyr::summarize(mtcars, avg_mpg = mean(mpg), .by = c(cyl, gear))
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(summarize=list(by=list("cyl","gear"), metrics=list(name="avg_mean", operator="mean", column="mpg"))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="summarize", parameters=list(by=list("cyl","gear"), metrics=list(name="avg_mean", operator="mean", column="mpg"))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 As we construct the engine it's clear that we will be dynamically assigning a new column name, in a manner similar to `mutate()` and therefore a named list should be used.
@@ -1233,10 +1267,10 @@ build_summarize <- function(x) {
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 ## summarize expression
-summarize_expr <- build_summarize(inp$summarize$metrics)
+summarize_expr <- build_summarize(inp$parameters$metrics)
 
 ## list of grouping columns
-by_expr <- rlang::syms(inp$summarize$by)
+by_expr <- rlang::syms(inp$parameters$by)
 
 data <- dplyr::summarize(mtcars, !!summarize_expr, .by = c(!!!by_expr))
 print(data)
@@ -1245,13 +1279,13 @@ print(data)
 In this implementation, the summarize expression is built using `build_summarize()`
 
 ```{r}
-build_summarize(inp$summarize$metrics)
+build_summarize(inp$parameters$metrics)
 ```
 
 and the list of grouping columns is a list of syms
 
 ```{r}
-rlang::syms(inp$summarize$by)
+rlang::syms(inp$parameters$by)
 ```
 
 ::: {.callout-tip}
@@ -1268,7 +1302,8 @@ dplyr::summarize(mtcars, avg_mpg = mean(mpg), max_hp = max(hp), n = dplyr::n(), 
 
 ```json
 {
-  "summarize": {
+  "step": "summarize",
+  "parameters": {
     "by": ["cyl"],
     "metrics": [
       { "name": "avg_mpg","operator": "mean", "column": "mpg"},
@@ -1282,7 +1317,7 @@ dplyr::summarize(mtcars, avg_mpg = mean(mpg), max_hp = max(hp), n = dplyr::n(), 
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="avg_mean", operator="mean", column="mpg"), list(name="max_hp", operator="max", column="hp"), list(name="n", operator="n")))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="summarize", parameters=list(by=list("cyl"), metrics=list(list(name="avg_mean", operator="mean", column="mpg"), list(name="max_hp", operator="max", column="hp"), list(name="n", operator="n")))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 ```{r}
@@ -1301,10 +1336,10 @@ build_summarize <- function(x) {
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 ## summarize expression
-summarize_expr <- build_summarize(inp$summarize$metrics)
+summarize_expr <- build_summarize(inp$parameters$metrics)
 
 ## list of grouping columns
-by_expr <- rlang::syms(inp$summarize$by)
+by_expr <- rlang::syms(inp$parameters$by)
 
 data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
 print(data)
@@ -1313,13 +1348,13 @@ print(data)
 Here, each summarize expression is built using `build_summarize()`
 
 ```{r}
-build_summarize(inp$summarize$metrics)
+build_summarize(inp$parameters$metrics)
 ```
 
 and passed to `dplyr::summarize()` using `!!!`.  The list of grouping columns is, once again, a list of syms
 
 ```{r}
-rlang::syms(inp$summarize$by)
+rlang::syms(inp$parameters$by)
 ```
 
 ## Multiple Columns in a Single Metric
@@ -1332,7 +1367,8 @@ dplyr::summarize(mtcars, av_ratio = mean(mpg / hp), .by = cyl)
 
 ```json
 {
-  "summarize": {
+  "step": "summarize",
+  "parameters": {
     "by": ["cyl"],
     "metrics": [
       {
@@ -1352,7 +1388,7 @@ dplyr::summarize(mtcars, av_ratio = mean(mpg / hp), .by = cyl)
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="avg_ratio", operator="mean", expression=list(operator="/", lhs="mpg", rhs="hp"))))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="summarize", parameters=list(by=list("cyl"), metrics=list(list(name="avg_ratio", operator="mean", expression=list(operator="/", lhs="mpg", rhs="hp"))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 The `build_expr()` function is the same as `build_mutate()` in @sec-mutate-generic
@@ -1396,10 +1432,10 @@ build_summarize <- function(x, col_names = c()) {
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 ## summarize expression
-summarize_expr <- build_summarize(inp$summarize$metrics, names(mtcars))
+summarize_expr <- build_summarize(inp$parameters$metrics, names(mtcars))
 
 ## list of grouping columns
-by_expr <- rlang::syms(inp$summarize$by)
+by_expr <- rlang::syms(inp$parameters$by)
 
 data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
 print(data)
@@ -1428,7 +1464,8 @@ and represented in JSON as
 
 ```json
 {
-  "summarize": {
+  "step": "summarize",
+  "parameters": {
     "by": ["cyl"],
     "metrics": [
       {
@@ -1452,7 +1489,7 @@ and represented in JSON as
 ```{r}
 #| echo: false
 #| eval: true
-jsonlite::write_json(list(summarize=list(by=list("cyl"), metrics=list(list(name="score", operator="mean", expression=list(operator="/", lhs=list(operator="+", lhs="mpg", rhs="hp"), rhs="wt"))))), 'data/myfile.json', auto_unbox = TRUE)
+jsonlite::write_json(list(step="summarize", parameters=list(by=list("cyl"), metrics=list(list(name="score", operator="mean", expression=list(operator="/", lhs=list(operator="+", lhs="mpg", rhs="hp"), rhs="wt"))))), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
 The structure of the expression tree preserves the notion of parentheses; the order of operations is determined by how the expression is nested.
@@ -1495,10 +1532,10 @@ build_summarize <- function(x, col_names = c()) {
 inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 
 ## summarize expression
-summarize_expr <- build_summarize(inp$summarize$metrics, names(mtcars))
+summarize_expr <- build_summarize(inp$parameters$metrics, names(mtcars))
 
 ## list of grouping columns
-by_expr <- rlang::syms(inp$summarize$by)
+by_expr <- rlang::syms(inp$parameters$by)
 
 data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
 print(data)

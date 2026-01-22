@@ -1272,7 +1272,7 @@ summarize_expr <- build_summarize(inp$parameters$metrics)
 ## list of grouping columns
 by_expr <- rlang::syms(inp$parameters$by)
 
-data <- dplyr::summarize(mtcars, !!summarize_expr, .by = c(!!!by_expr))
+data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
 print(data)
 ```
 

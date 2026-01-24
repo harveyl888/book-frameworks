@@ -1,0 +1,269 @@
+# A Generalized Approach to Expressions {#sec-expressions}
+
+The data wrangling engines we have seen to date build expressions from their fundamental building blocks using an operator/operand separation.  We have seen how this concept can be used from simple expressions up to nested, more complex expressions.
+
+This approach works well for machine-generated instructions, but when working with user-generated expressions a more flexible approach may be needed.  As stressed earlier, use of `parse(eval())` to evaluate an expression should be avoided.  Expression parsing can, however, be used if a suitable validation process is put into place.  This validation process should take a string expression and validate that it uses only **safe** operators.  It should then be executed only in a **safe** environment using `rlang::parse_expr()`.  This chapter will explore the approach.
+
+## The Abstract Syntax Tree (AST)
+
+In order to understand expressions in R, it helps to understand the Abstract Syntax Tree (AST).  An AST is a tree-structured representation of an expression.  The `ast()` function from the {lobstr} package can be used to convert an expression into an AST.  For example:
+
+```{r}
+lobstr::ast(1 + 2)
+lobstr::ast(mean(set1, set2, set3))
+lobstr::ast(sd(c(4, 5, 6)))
+lobstr::ast(12 + (9 - x * (4 - y) ^ 2))
+```
+
+More information on expressions and the abstract syntax trees can be found in *Advanced R*.[^1]
+
+[^1]: Wickham, H. (2019). Advanced R (2nd ed.). Chapman & Hall/Routledge [https://adv-r.hadley.nz/expressions.html#ast](https://adv-r.hadley.nz/expressions.html#ast)
+
+## A Safe Expression Handling Strategy {#sec-data-wrangling-expressions}
+
+A three-step approach can be used to ensure safe evaluation:
+
+1. **Parse** the expression into an Abstract Syntax Tree (AST) without executing.
+2. **Validate** the AST to ensure only allowed operators are present.
+3. **Evaluate** in a restricted environment with only necessary operators.
+
+### Step 1. Parsing Expressions
+
+`rlang::parse_expr()` parses an expression without executing it.
+
+::: {.callout-tip}
+`rlang::parse_expr()` parses an expression without running it.  Parsing an expression produces an AST (abstract expression tree).  For example, running `rlang::parse_expr("1 + 2")` produces the AST
+
+```{r}
+#| echo: false
+lobstr::ast(1 + 2)
+```
+:::
+
+```{r}
+#| error: true
+rlang::parse_expr("1 + 2")
+rlang::parse_expr("age > 30")
+rlang::parse_expr("42")
+# This will error as `Hello World` is not an expression
+rlang::parse_expr("Hello World")
+rlang::parse_expr("\"Hello World\"")
+```
+
+### Step 2. Validating the AST
+
+Validation walks the AST recursively and rejects any disallowed operators.  Nothing is evaluated at this stage; the function just verifies that only a small, approved subset of R operators are used.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd")
+
+validate_expression <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expression(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expression(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+```
+
+The `validate_expression()` function walks through the parsed expression (AST) and ensures that **every** part is allowed before anything is evaluated.  This version has been written to check the expression for simple arithmetic, logical expressions and a small subset of functions, but nothing else, as defined in `allowed_calls`.  If the AST is composed of safe operators and values then it returns `TRUE`, if not then it **stops**.  The function works by performing a recursively traversing the AST with the following logic:
+
+-  If the node is an atomic value (eg numeric, logical or string) then return `TRUE`.  All atomics are safe as they cannot execute code.
+-  If the node is a function call (eg `1 + 2`, `x > 5`) then
+    -  Extract the operator/function name (`fn`).
+    -  Check for parentheses and validate the inner expression.  See @nte-expressions-parentheses.
+    -  check that `fn` is allowed by confirming it is in `allowed_operators` list.  The ensures that **only** the subset of operators or functions can be used.  If the operator is not in the `allowed_operators` list then stop.
+    -  recursively validate each argument in the node.
+-  Anything else is rejected.
+
+The following examples illustrate that, although `max(c(1,2,3))` is a valid R expression, it is rejected by `validate_expression()` as `max()` is not in `allowed_calls`.
+
+```{r}
+#| error: true
+# valid expression
+validate_expression(rlang::parse_expr('1 + 2'))
+# valid expression
+validate_expression(rlang::parse_expr('mean(c(1,2,3))'))
+# invalid expression - `max` is not allowed
+validate_expression(rlang::parse_expr('max(c(1,2,3))'))
+# invalid expression - `[`] is not allowed
+validate_expression(rlang::parse_expr('x[1]'))
+# invalid expression - `library` is not allowed
+validate_expression(rlang::parse_expr('library(dplyr)'))
+```
+
+::: {#nte-expressions-parentheses .callout-note}
+## Parentheses in AST
+Parentheses are ignored.  They are not function calls, but are grouping.  The AST for the expression `x > 1` is
+
+```{r}
+lobstr::ast(x > 1)
+```
+
+whereas the AST for the expression `(x > 1)` is
+
+```{r}
+lobstr::ast((x > 1))
+```
+
+This part of `validate_expression()` ignores the parentheses and validates the inner part (in this case `>`(x, 1)) of the expression ony:
+
+```{r}
+#| eval: false
+if (fn == "(") {
+  validate_expression(expr[[2]])
+  return(TRUE)
+}
+```
+:::
+
+### Step 3. Safe Evaluation Environment
+
+At this point we know our expression only contains operators in the allowed list and we can evaluate it.  A simple function combines validation and evaluation as follows:
+
+```{r}
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr)
+}
+```
+
+```{r}
+safe_eval(rlang::parse_expr('1 + 2'))
+```
+
+By default, `eval()` evaluates within the environment in which it was called.  Even if our AST contains just operators listed in `allowed_calls`, R still has to look up these symbols when evaluating an expression.  By default `+` points to the addition operator one of the beautiful things about R is that `+` can be redefined, for example to `-`.
+
+```{r}
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr)
+
+## store default behavior of `+` and reassign `+` to act as `-`
+add_operator_default <- `+`
+`+` <- `-`
+
+eval(my_expr)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+Wow!  We've just redefined how basic mathematics works in R.  To make things more secure, we could use an environment just for evaluation.  Our safe environment will contain the mappings we need to ensure that nothing can be changed.
+
+```{r}
+## map all required operators for use in a safe environment
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`
+  )
+)
+
+## store default `+` behavior
+add_operator_default <- `+`
+
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr, envir = safe_env)
+
+## reassign `+` to act as `-`
+`+` <- `-`
+
+eval(my_expr, envir = safe_env)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+when we evaluate using `eval()` we supply `safe_env` which contains only mappings for our functions and operators.  We can confirm that functions not listed in our environment are blocked.
+
+```{r}
+#| error: true
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("mean(c(1, 2, 3))")
+
+## evaluate in global environment
+eval(my_expr)
+
+## evaluate in safe environment
+eval(my_expr, envir = safe_env)
+```
+
+Our updated safe evaluation becomes:
+
+```{r}
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`,
+    `^`  = `^`,
+    `>`  = `>`,
+    `<`  = `<`,
+    `>=` = `>=`,
+    `<=` = `<=`,
+    `==` = `==`,
+    `!=` = `!=`,
+    `&`  = `&`,
+    `|`  = `|`,
+    `&&` = `&&`,
+    `||` = `||`,
+    `!`  = `!`,
+    `(` = `(`,
+    c = c,
+    mean = mean,
+    sd = sd
+  )
+)
+
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr, envir = safe_env)
+}
+```
+
+```{r}
+#| error: true
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("mean(c(1, 2, 3))")
+
+## evaluate in global environment
+eval(my_expr)
+
+## validate and evaluate in safe environment
+safe_eval(my_expr)
+```

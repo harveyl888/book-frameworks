@@ -22,6 +22,7 @@ book:
       - data_wrangling-transformation.qmd
       - data_wrangling-reshaping.qmd
       - data_wrangling-joins.qmd
+      - data_wrangling-generalized-approach-expressions.qmd
     - part: "Advanced Instructions"
       chapters:
       - advanced_instructions-introduction.qmd

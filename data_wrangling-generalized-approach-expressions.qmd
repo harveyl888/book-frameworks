@@ -267,3 +267,111 @@ eval(my_expr)
 ## validate and evaluate in safe environment
 safe_eval(my_expr)
 ```
+
+## Putting it all Together
+
+Our final expression parser looks like this:
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd")
+
+validate_expression <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expression(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expression(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`,
+    `^`  = `^`,
+    `>`  = `>`,
+    `<`  = `<`,
+    `>=` = `>=`,
+    `<=` = `<=`,
+    `==` = `==`,
+    `!=` = `!=`,
+    `&`  = `&`,
+    `|`  = `|`,
+    `&&` = `&&`,
+    `||` = `||`,
+    `!`  = `!`,
+    `(` = `(`,
+    c = c,
+    mean = mean,
+    sd = sd
+  )
+)
+
+safe_eval <- function(expr) {
+  validate_expression(expr)
+  eval(expr, envir = safe_env)
+}
+
+evaluate_expression <- function(x) {
+
+  # Evaluate expressions
+  tryCatch(
+    {
+      expr <- rlang::parse_expr(x)
+      return(safe_eval(expr))
+    },
+    error = function(e) {
+      # Coerce literals
+      if (x %in% c("TRUE", "FALSE")) return(as.logical(x))
+      if (!is.na(suppressWarnings(as.numeric(x)))) return(as.numeric(x))
+      x
+    }
+  )
+
+}
+```
+
+the addition of `tryCatch()` error handling deals with with edge cases of passing a numeric or logical as opposed to a string.  For example:
+
+```{r}
+#| error: true
+rlang::parse_expr("22")
+evaluate_expression("22")
+rlang::parse_expr(22)
+evaluate_expression(22)
+rlang::parse_expr("TRUE")
+evaluate_expression("TRUE")
+rlang::parse_expr(TRUE)
+evaluate_expression(TRUE)
+```
+
+`evaluate_expression()` parses an expression, validates against a whitelist of operators and evaluates in a safe environment.

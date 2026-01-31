@@ -841,6 +841,129 @@ data <- dplyr::filter(mtcars, !!expr)
 print(data)
 ```
 
+### Expression Handling
+
+@sec-expression-parser introduced a method for safe expression handling.  This method can be applied to `filter()`.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+build_filter_expr <- function(x) {
+  expr <- rlang::parse_expr(x)
+  validate_expr(expr)
+  expr
+}
+```
+
+Here's a simple example to illustrate filtering using an expression
+
+```json
+{
+  "step": "filter",
+  "parameters": {
+    "expression": "mpg > 30"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="filter", parameters=list(expression="mpg > 30")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::filter(mtcars, !!build_filter_expr(inp$parameters$expression))
+```
+
+and here's a more complex example:
+
+```json
+{
+  "step": "filter",
+  "parameters": {
+    "expression": "cyl > drat & wt > 4"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="filter", parameters=list(expression="cyl > drat & wt > 4")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::filter(mtcars, !!build_filter_expr(inp$parameters$expression))
+```
+
+This will fail as `median()` is not included in the `allowed_operators` list.
+
+```json
+{
+  "step": "filter",
+  "parameters": {
+    "expression": "mpg > median(mpg)"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="filter", parameters=list(expression="mpg > median(mpg)")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+#| error: true
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::filter(mtcars, !!build_filter_expr(inp$parameters$expression))
+```
+
 ## Adding and Changing Columns
 
 ### `dplyr::mutate()`
@@ -1186,6 +1309,85 @@ inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
 expr <- build_mutate(inp$parameters)
 data <- dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!expr)
 print(data)
+```
+
+### Expression Handling
+
+Similar to `filter()`, the methods introduced in @sec-expression-parser can be used to evaluate expressions for `mutate()` steps.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+build_mutate_expr <- function(x) {
+  expr <- rlang::parse_expr(x)
+  validate_expr(expr)
+  expr
+}
+```
+
+Here's a simple example to illustrate adding a new column using an expression
+
+```json
+{
+  "step": "mutate",
+  "parameters": {
+    "new_col_name": "new_col",
+    "expression": "mpg * cyl + 5"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="mutate", parameters=list(new_col_name="new_col", expression="mpg * cyl + 5")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::mutate(mtcars, !!inp$parameters$new_col_name := !!build_mutate_expr(inp$parameters$expression))
 ```
 
 ## Summarizing Data
@@ -1540,3 +1742,89 @@ by_expr <- rlang::syms(inp$parameters$by)
 data <- dplyr::summarize(mtcars, !!!summarize_expr, .by = c(!!!by_expr))
 print(data)
 ```
+
+### Expression Handling
+
+As in `filter()` and `mutate()`, the methods introduced in @sec-expression-handling can be used to evaluate expressions for `summarize()` steps.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+build_summarize_expr <- function(x) {
+  expr <- rlang::parse_expr(x$expression)
+  validate_expr(expr)
+  setNames(list(expr), x$new_col_name)
+}
+```
+
+Here's a simple example to illustrate adding a new column using an expression
+
+```json
+{
+  "step": "summarize",
+  "parameters": {
+    "new_col_name": "score",
+    "expression": "(mean(mpg + hp) / wt)",
+    "by": ["cyl"]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="summarize", parameters=list(new_col_name="score", expression="mean((mpg + hp) / wt)", by=list("cyl"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+
+## list of grouping columns
+by_expr <- rlang::syms(inp$parameters$by)
+
+dplyr::summarize(mtcars, !!!build_summarize_expr
+(inp$parameters), .by = c(!!!by_expr))
+```
+

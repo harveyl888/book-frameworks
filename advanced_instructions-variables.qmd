@@ -257,7 +257,7 @@ This approach works when direct replacement is all that is required (eg replacin
 
 ## Expression Parsing
 
-In order to work with expressions such as `$myVar2$ + 10` we need to build an expression parser.  As highlighted previously (@sec-command-parsing), when evaluating expressions there is a temptation to use `eval(parse())` directly.  This should be avoided as it could lead to arbitrary code execution.  A safe expression parser for data wrangling has already been discussed in @sec-data-wrangling-expressions and it can also be used for expressions containing variables.  Safe expression handlers parse an expression into an AST (abstract syntax tree) and validate it before evaluation.
+In order to work with expressions such as `$myVar2$ + 10` we need to build an expression parser.  When evaluating expressions there is a temptation to use `eval(parse())` directly.  This should be avoided as it could lead to arbitrary code execution.  A safe expression parser for data wrangling has already been discussed in @sec-expression-parser and it can modified for expressions containing variables.  Safe expression handlers parse an expression into an AST (abstract syntax tree) and validate it before evaluation.
 
 Let's start with a JSON input:
 
@@ -281,7 +281,15 @@ Let's start with a JSON input:
 jsonlite::write_json(list(variables=list(myVar1=TRUE, myVar2=55), contents=list(val1="$myVar1$", val2="$myVar2$ + 10", val3="($myVar2$ > 50) && $myVar1$")), 'data/myfile.json', auto_unbox = TRUE)
 ```
 
-The engine requires several components, which will be built as a group of functions.
+The engine requires several components, which will be built as a group of functions.  The approach of variable substitution followed by expression evaluation can be summarized by the following pipeline:
+
+```{mermaid}
+flowchart TD
+    A(Substitute Variables) --> B(Detect Expression)
+    B --> C(Parse)
+    C --> D(Validate)
+    D --> E(Evaluate)
+```
 
 ### Variable Substitution
 
@@ -334,16 +342,25 @@ After substituting variables, the next steps are:
 2. **Validate** the AST to ensure only allowed operators are present.
 3. **Evaluate** in a restricted environment with only necessary operators.
 
-These three steps are discussed in detail in @sec-data-wrangling-expressions.
+The first two of these steps are discussed in detail in @sec-expression-parser.  The third step (*evaluate*) has been previously discussed in terms of data masking but here we wish to evaluate a non-tidyverse expression within a controlled environment.
 
-The code to evaluate in a safe environment is
+Parsing an expression can be performed using `rlang::parse_expr()` as follows
+
+```{r}
+rlang::parse_expr("55 + 10")
+```
+
+and validation may be performed using a slightly modified version of `validate_expr()` function from @sec-expression-parser.  The logic that permits **symbols** should be removed, since scalar evaluation is not performed within in a data mask.[^1]. Here we define a new function, `validate_var_expr()` to perform the validation for variable expressions.
+
+[^1]: In contrast, expressions evaluated inside tidyverse verbs such as `filter()` or `mutate()` require symbols, as column names are resolved through a data mask.
 
 ```{r}
 allowed_operators <- c("+", "-", "*", "/", "^", 
                        ">", ">=", "<", "<=", "==", "!=", 
-                       "&&", "||", "!", "c", "mean", "sd")
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
 
-validate_expression <- function(expr) {
+validate_var_expr <- function(expr) {
   
   # Atomic values (numbers, strings, logicals) are always safe
   if (rlang::is_atomic(expr)) {
@@ -356,7 +373,7 @@ validate_expression <- function(expr) {
 
     # Parentheses are grouping operators, not function calls
     if (fn == "(") {
-      validate_expression(expr[[2]])
+      validate_var_expr(expr[[2]])
       return(TRUE)
     }
 
@@ -367,7 +384,7 @@ validate_expression <- function(expr) {
 
     # Recursively validate arguments
     for (i in 2:length(expr)) {
-      validate_expression(expr[[i]])
+      validate_var_expr(expr[[i]])
     }
 
     return(TRUE)
@@ -377,6 +394,83 @@ validate_expression <- function(expr) {
   stop("Unsupported expression type", call. = FALSE)
 }
 ```
+
+The `validate_var_expr()` function walks through the parsed expression (AST) and ensures that **every** part is allowed before anything is evaluated.  After parsing and validation we know our expression only contains operators in the allowed list and we can evaluate it.  A simple function combines validation and evaluation as follows:
+
+```{r}
+safe_eval <- function(expr) {
+  validate_var_expr(expr)
+  eval(expr)
+}
+```
+
+```{r}
+safe_eval(rlang::parse_expr('1 + 2'))
+```
+
+By default, `eval()` evaluates within the environment in which it was called.  Even if our AST contains just operators listed in `allowed_calls`, R still has to look up these symbols when evaluating an expression.  By default `+` points to the addition operator one of the beautiful things about R is that `+` can be redefined, for example to `-`.
+
+```{r}
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr)
+
+## store default behavior of `+` and reassign `+` to act as `-`
+add_operator_default <- `+`
+`+` <- `-`
+
+eval(my_expr)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+Wow!  We've just redefined how basic mathematics works in R.  To make things more secure, we could use an environment just for evaluation.  Our safe environment will contain the mappings we need to ensure that nothing can be changed.
+
+```{r}
+## map all required operators for use in a safe environment
+safe_env <- rlang::new_environment(
+  data = list(
+    `+`  = `+`,
+    `-`  = `-`,
+    `*`  = `*`,
+    `/`  = `/`
+  )
+)
+
+## store default `+` behavior
+add_operator_default <- `+`
+
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("9 + 5")
+
+eval(my_expr, envir = safe_env)
+
+## reassign `+` to act as `-`
+`+` <- `-`
+
+eval(my_expr, envir = safe_env)
+
+## reset `+` back to original behavior
+`+` <- add_operator_default
+```
+
+when we evaluate using `eval()` we supply `safe_env` which contains only mappings for our functions and operators.  We can confirm that functions not listed in our environment are blocked.
+
+```{r}
+#| error: true
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("mean(c(1, 2, 3))")
+
+## evaluate in global environment
+eval(my_expr)
+
+## evaluate in safe environment
+eval(my_expr, envir = safe_env)
+```
+
+Our updated safe evaluation becomes:
 
 ```{r}
 safe_env <- rlang::new_environment(
@@ -405,9 +499,21 @@ safe_env <- rlang::new_environment(
 )
 
 safe_eval <- function(expr) {
-  validate_expression(expr)
+  validate_var_expr(expr)
   eval(expr, envir = safe_env)
 }
+```
+
+```{r}
+#| error: true
+## define an expression for evaluation
+my_expr <- rlang::parse_expr("mean(c(1, 2, 3))")
+
+## evaluate in global environment
+eval(my_expr)
+
+## validate and evaluate in safe environment
+safe_eval(my_expr)
 ```
 
 ### A function to run it all
@@ -436,9 +542,7 @@ substitute_and_eval <- function(x, vars) {
       return(safe_eval(expr))
     },
     error = function(e) {
-      # Coerce literals
-      if (x %in% c("TRUE", "FALSE")) return(as.logical(x))
-      if (!is.na(suppressWarnings(as.numeric(x)))) return(as.numeric(x))
+      # Return untouched
       x
     }
   )
@@ -451,8 +555,7 @@ substitute_and_eval <- function(x, vars) {
 -  variable substitution - substitute only known variable names
 -  expression validation - check that only desired functions/operators are used in the expression
 -  safe evaluation - evaluated in a safe environment
--  coerce literals - if string was not an expression (numeric or logical) then return the literal value
--  fallback - if not an expression or literal, then return unchanged
+-  fallback - if not an expression, then return unchanged
 
 ### Putting it all Together
 
@@ -461,9 +564,10 @@ Our final expression parser looks like this:
 ```{r}
 allowed_operators <- c("+", "-", "*", "/", "^", 
                        ">", ">=", "<", "<=", "==", "!=", 
-                       "&&", "||", "!", "c", "mean", "sd")
-
-validate_expression <- function(expr) {
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_var_expr <- function(expr) {
   
   # Atomic values (numbers, strings, logicals) are always safe
   if (rlang::is_atomic(expr)) {
@@ -476,7 +580,7 @@ validate_expression <- function(expr) {
 
     # Parentheses are grouping operators, not function calls
     if (fn == "(") {
-      validate_expression(expr[[2]])
+      validate_var_expr(expr[[2]])
       return(TRUE)
     }
 
@@ -487,7 +591,7 @@ validate_expression <- function(expr) {
 
     # Recursively validate arguments
     for (i in 2:length(expr)) {
-      validate_expression(expr[[i]])
+      validate_var_expr(expr[[i]])
     }
 
     return(TRUE)
@@ -523,7 +627,7 @@ safe_env <- rlang::new_environment(
 )
 
 safe_eval <- function(expr) {
-  validate_expression(expr)
+  validate_var_expr(expr)
   eval(expr, envir = safe_env)
 }
 
@@ -548,9 +652,7 @@ substitute_and_eval <- function(x, vars) {
       return(safe_eval(expr))
     },
     error = function(e) {
-      # Coerce literals
-      if (x %in% c("TRUE", "FALSE")) return(as.logical(x))
-      if (!is.na(suppressWarnings(as.numeric(x)))) return(as.numeric(x))
+      # Return untouched
       x
     }
   )

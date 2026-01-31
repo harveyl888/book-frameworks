@@ -1,0 +1,444 @@
+# Expression Handling {#sec-expression-handling}
+
+## Introduction
+
+Expression handling is fundamental to working with data in R, particularly when using libraries such as dplyr and ggplot2.  This chapter covers how R captures, manipulates, and evaluates expressions.
+
+Most R functions use *standard evaluation*, where arguments are evaluated immediately before the function executes.  Many *tidyverse* functions, however, use *non-standard evaluation* (NSE), which captures expressions unevaluated for downstream processing.
+
+## Non-Standard Evaluation
+
+### Standard Evaluation
+
+In standard evaluation, arguments are evaluated before the function is called.  In this example:
+
+```r
+x <- c(1, 2, 3, 4, 5)
+mean(x)
+```
+
+`x` is evaluated immediately and the result is passed to `mean()`.
+
+### Non-Standard Evaluation in Data Manipulation
+
+Many **tidyverse** verbs behave differently.  In functions such as `dplyr::filter()` and `dplyr::mutate()`, expressions are first captured and evaluated later, a process known as **non-standard evaluation (NSE)**.  For example in
+
+```r
+dplyr::filter(mtcars, mpg > 30)
+```
+
+the expression **mpg > 30** is not evaluated at the time the function is called.  Instead it is captured and evaluated in a special context where column names from `mtcars` are available as variables.  This allows `mpg` to be written without having to reference `mtcars` as you would in base R, `mtcars$mpg`.
+
+### When to use Non-Standard Evaluation?
+
+NSE provides a more intuitive syntax for interactive use.  Typing `filter(mtcars, mpg > 30)` is cleaner than `filter(mtcars, mtcars$mpg > 30)`.  NSE creates challenges, however, when working *programmatically*.  For example when building conditions dynamically or passing column names as strings.
+
+## Tidy Evaluation
+
+Tidy evaluation extends non-standard evaluation to make it composable and programmable.  It provides a consistent framework for capturing expressions and manipulating them as data.
+
+### Symbols
+
+A *symbol* is one of key building blocks of tidy evaluation.  It represents a name that is looked up when evaluated, rather than when it is created.  Symbols can be constructed programmatically using `rlang::sym()`.  For example:
+
+```{r}
+# Create a symbol from a string
+col_name <- "mpg"
+sym_col <- rlang::sym(col_name)
+print(sym_col)
+```
+
+### Quasiquotation: The `!!` Operator
+
+Once you have a symbol or expression, you can inject it into a function call using the `!!` (bang-bang) operator:
+
+```{r}
+library(rlang)
+
+col_name <- "mpg"
+threshold <- 30
+
+# This will fail: col_name is treated as a literal variable name
+dplyr::filter(mtcars, col_name > threshold)
+
+# This works: the symbol is injected using !!
+expr <- sym(col_name)
+dplyr::filter(mtcars, !!expr > threshold)
+```
+
+The `!!` operator tells the function: "This is not a literal name; evaluate this expression and inject the result".
+
+### Quasiquotation: The `!!!` Operator
+
+To inject multiple expressions at once, the `!!!` (bang-bang-bang) operator can be used.  This splices a list of expressions into the function call.  
+
+#### `expr()` vs `sym()`
+
+Before diving into `!!!`, it is helpful to understand the difference between `expr()` and `sym()`.
+
+-  **`sym(name)`** creates a *symbol*, which is a reference to a single variable or column name.  It can be used with `!!` to inject the name into a function call.  Operators, however, cannot be used in symbols.  `sym("mpg")` works but `sym(mpg) > 30` fails.
+-  **`expr()`** captures an entire *expression* which can include operators, function calls and complex logic.  It is used when you need to capture more than just a name, for example `mpg > 30`.
+
+Here is an example of using `!!!` to filter against a list of conditions.  The conditions are built using `expr()`.
+
+```{r}
+# Build a list of filter conditions
+filter_conditions <- list(
+    expr(mpg > 30),
+    expr(gear == 5)
+)
+
+# Splice all the conditions into the filter function
+dplyr::filter(mtcars, !!!filter_conditions)
+```
+
+### Combining Quasiquotation with Functions
+
+To use quasiquotations inside functions you can use the `enquo()` function to capture an argument as a quosure (a quoted expression with its environment).  For example:
+
+```{r}
+summarize_by <- function(data, group_col, summary_col) {
+    group_quo <- enquo(group_col)
+    summary_quo <- enquo(summary_col)
+
+    data |> 
+        dplyr::group_by(!!group_quo) |>
+        dplyr::summarize(mean = mean(!!summary_quo, na.rm = TRUE))
+}
+
+summarize_by(mtcars, cyl, mpg)
+```
+
+## Data Masking
+
+Many tidyverse verbs evaluate expressions within a **data mask**.  A data mask is an environment in which the columns of a data frame are made temporarily available as variables.
+
+### How Data Masking Works
+
+Consider the expression
+
+```r
+dplyr::filter(mtcars, mpg > 30)
+```
+
+Inside `filter()`, the data mask makes `mpg` available as if it were a variable, even though it is actually a column.  This is possible because:
+
+1. `mpg > 30` is capture and not evaluated immediately
+2. `dplyr` creates an environment where `mpg` refers to the `mpg` column
+3. The expression is evaluated in this masked environment
+4. The result (a logical vector) is used to filter the rows of `mtcars`
+
+Data masking only applies to certain contexts within tidyverse functions.  For example
+
+```r
+# Data masking applies here
+# mpg is looked up in the data mask
+dplyr::mutate(mtcars, new_col = mpg * 2)
+
+# Data masking does not apply here
+# We are assigning a string so nothing is evaluated
+dplyr::mutate(mtcars, new_col = "miles_per_gallon")
+```
+
+::: {.callout-note}
+Data masking is closely related to non-standard evaluation but is conceptually different.  Non-standard evaluation describes *when* expressions are captured and evaluated, whereas data masking describes *where* names are resolved when the evaluation occurs.
+:::
+
+### Pronouns: `.data` and `.env`
+
+When using data masking sometimes you need to determine if a name should be looked up in the data or in the environment.  The `.data` and `.env` pronouns provide explicit control.
+
+```{r}
+#| eval: false
+gear <- 6
+
+# Ambiguous
+# is threshold a column or an object?
+dplyr::filter(mtcars, cyl > gear)
+```
+
+```{r}
+gear <- 6
+
+# Explicit
+# gear is in the environment
+dplyr::filter(mtcars, cyl > .env$gear)
+```
+
+```{r}
+gear <- 6
+
+# Explicit
+# gear is in the data
+dplyr::filter(mtcars, cyl > .data$gear)
+```
+
+## Practical Examples
+
+Once you have got the hand of tidy evaluation and data masking, you can build complex, reusable functions for data manipulation.
+
+### Dynamic Column Selection
+
+Functions that will work with any column
+
+```{r}
+get_summary <- function(data, col_name) {
+    col <- sym(col_name)
+
+    data |> 
+        dplyr::summarize(
+            mean = mean(!!col, na.rm = TRUE),
+            df = sd(!!col, na.rm = TRUE),
+            n = dplyr::n()
+        )
+}
+
+get_summary(mtcars, "mpg")
+```
+
+### Building Complex Filters Programmatically
+
+Construct filter conditions from external specifications, for example user input or configuration file.
+
+```{r}
+apply_filters <- function(data, filter_specs) {
+    conditions <- lapply(filter_specs, function(spec) {
+        col <- sym(spec$col)
+        op <- spec$op
+        val <- spec$val
+
+        switch(op,
+            ">" = expr(!!col > !!val),
+            "==" = expr(!!col == !!val),
+            "<" = expr(!!col < !!val)
+        )
+    })
+    dplyr::filter(data, !!!conditions)
+}
+
+filter_conditions <- list(
+    list(col = "mpg", op = ">", val = 30),
+    list(col = "gear", op = "==", val = 5)
+)
+apply_filters(mtcars, filter_conditions)
+```
+
+### Creating Reusable Transformation Functions
+
+Build functions that transform data in flexible ways.
+
+```{r}
+normalize_column <- function(data, col_name) {
+    col <- sym(col_name)
+
+    data |> dplyr::mutate(!!col := (!!col - mean(!!col, na.rm = TRUE)) / sd(!!col, na.rm = TRUE))
+}
+
+normalize_column(mtcars, "mpg")
+```
+
+## When to Build Expressions vs Parse Strings
+
+Expression handling can be implemented in two different ways, and the choice matters for safety, testability and maintainability.  Programmatic construction is a bottom-up approach that builds an expression from its parts.  String parsing is a top-down approach that takes an expression and safely evaluates it.
+
+### Programmatic Construction
+
+-  Use when inputs are *structured* (eg JSON or YAML with a dictionary of arguments) or when the system generates expressions.
+-  Useful tools are `rlang::sym()`, `rlang::syms()`, `rlang::call2()`, `rlang::expr()`.  Splice with `!!` and `!!!`.
+-  Advantages: it is explicit, testable, predictable and ultimately safer.  It would be the **default choice** when you want to control the input format.
+
+### String Parsing
+
+-  Use when users or external systems supply free-form expressions.
+-  The general pattern would be to parse and validates the expression before evaluating.
+-  Trade-offs are that it is flexible but requires strict validation, careful scoping and clear error handling.
+
+### When to use Each
+
+-  Structured input => **Programmatic construction**.
+-  Free-text user input => **String parsing**.
+
+The next section (@sec-expression-parser) provides a concrete approach to expression parsing.
+
+## Building a Safe Expression Parser {#sec-expression-parser}
+
+While quasiquotation tools are powerful for everyday programming, they may not be suitable when evaluating expressions that come from external sources.  In these cases a safer approach is often to parse, validate and safely execute the expressions.
+
+1. **Parse** the expression into an Abstract Syntax Tree (AST) without executing.
+2. **Validate** the AST to ensure only allowed operators are present.
+3. **Evaluate** through data masking.
+
+### Understanding the Abstract Syntax Tree (AST)
+
+An abstract syntax tree is a tree-structured representation of an expression.  
+
+The `ast()` function from the {lobstr} package can be used to convert an expression into an AST.  For example:
+
+```{r}
+lobstr::ast(1 + 2)
+lobstr::ast(mean(set1, set2, set3))
+lobstr::ast(sd(c(4, 5, 6)))
+lobstr::ast(12 + (9 - x * (4 - y) ^ 2))
+```
+
+More information on expressions and the abstract syntax trees can be found in *Advanced R*.[^1]
+
+[^1]: Wickham, H. (2019). Advanced R (2nd ed.). Chapman & Hall/Routledge [https://adv-r.hadley.nz/expressions.html#ast](https://adv-r.hadley.nz/expressions.html#ast)
+
+### Step 1. Parsing Expressions
+
+`rlang::parse_expr()` parses an expression without executing it.
+
+
+::: {.callout-tip}
+`rlang::parse_expr()` parses an expression without running it.  Parsing an expression produces an AST (abstract expression tree).  For example, running `rlang::parse_expr("1 + 2")` produces the AST
+
+```{r}
+#| echo: false
+lobstr::ast(1 + 2)
+```
+:::
+
+```{r}
+#| error: true
+rlang::parse_expr("1 + 2")
+rlang::parse_expr("age > 30")
+rlang::parse_expr("42")
+# This will error as `Hello World` is not an expression
+rlang::parse_expr("Hello World")
+rlang::parse_expr("\"Hello World\"")
+```
+
+
+### Step 2. Validating the AST
+
+Validation walks the AST recursively and rejects any disallowed operators.  Nothing is evaluated at this stage; the function just verifies that only a small, approved subset of R operators are used.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+```
+
+
+The `validate_expr()` function walks through the parsed expression (AST) and ensures that **every** part is allowed before anything is evaluated.  This version has been written to check the expression for simple arithmetic, logical expressions and a small subset of functions, but nothing else, as defined in `allowed_calls`.  If the AST is composed of safe operators and values then it returns `TRUE`, if not then it **stops**.  The function works by performing a recursively traversing the AST with the following logic:
+
+-  If the node is an atomic value (eg numeric, logical or string) then return `TRUE`.  All atomics are safe as they cannot execute code.
+-  If the node is a variable or column name then return `TRUE`.
+-  If the node is a function call (eg `1 + 2`, `x > 5`) then
+    -  Extract the operator/function name (`fn`).
+    -  Check for parentheses and validate the inner expression.  See @nte-expressions-parentheses.
+    -  check that `fn` is allowed by confirming it is in `allowed_operators` list.  The ensures that **only** the subset of operators or functions can be used.  If the operator is not in the `allowed_operators` list then stop.
+    -  recursively validate each argument in the node.
+-  Anything else is rejected.
+
+The following examples illustrate that, although `max(c(1,2,3))` is a valid R expression, it is rejected by `validate_expr()` as `max()` is not in `allowed_calls`.
+
+```{r}
+#| error: true
+# valid expression
+validate_expr(rlang::parse_expr('1 + 2'))
+# valid expression
+validate_expr(rlang::parse_expr('mean(c(1,2,3))'))
+# invalid expression - `max` is not allowed
+validate_expr(rlang::parse_expr('max(c(1,2,3))'))
+# invalid expression - `[`] is not allowed
+validate_expr(rlang::parse_expr('x[1]'))
+# invalid expression - `library` is not allowed
+validate_expr(rlang::parse_expr('library(dplyr)'))
+```
+
+::: {#nte-expressions-parentheses .callout-note}
+## Parentheses in AST
+Parentheses are ignored.  They are not function calls, but are grouping.  The AST for the expression `x > 1` is
+
+```{r}
+lobstr::ast(x > 1)
+```
+
+whereas the AST for the expression `(x > 1)` is
+
+```{r}
+lobstr::ast((x > 1))
+```
+
+This part of `validate_expr()` ignores the parentheses and validates the inner part (in this case `>`(x, 1)) of the expression ony:
+
+```{r}
+#| eval: false
+if (fn == "(") {
+  validate_expr(expr[[2]])
+  return(TRUE)
+}
+```
+:::
+
+### Step 3. Evaluation Through Data Masking
+
+The validated expression can now be safely injected into tidyverse verbs, which then evaluate it using data masking.  For example using `dplyr::filter()`
+
+```{r}
+expr <- rlang::parse_expr("mpg > 30")
+validate_expr(expr)
+dplyr::filter(mtcars, !!expr)
+```
+
+or `dplyr::mutate()`
+
+```{r}
+expr <- rlang::parse_expr("mpg ^ 2")
+new_col_name <- "new_col"
+validate_expr(expr)
+dplyr::mutate(mtcars, !!new_col_name := !!expr)
+```
+
+This approach will fail as `max()` is not included in the list of allowed functions and operators.  Whether functions such as `max()` are permitted is entirely determined by the validation rules.
+
+```{r}
+#| error: true
+expr <- rlang::parse_expr("max(mpg)")
+new_col_name <- "new_col"
+validate_expr(expr)
+# dplyr::mutate(mtcars, !!new_col_name := !!expr)
+```
+

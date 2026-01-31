@@ -333,7 +333,7 @@ print(data)
 
 Using symbols for column names represents the simplest possible form of expression.  Although they resemble column selections, these arguments are evaluated as data-masked expressions rather than through tidy select.
 
-### Retuning All Columns
+### Returning All Columns
 
 `dplyr::distinct()` identifies rows with unique values.  If more than one row is satisfied,it will return the first match.  It can return either selected columns, as demonstrated above, or, if argument `.keep_all=TRUE`, will return all columns.
 
@@ -371,6 +371,84 @@ print(data)
 ```
 
 The change in code occurs at `dplyr::distinct()`, and does not affect the way expressions are built.  The use of `isTRUE` accounts for missing values (`isTRUE(NULL)` equates to `FALSE`).
+
+### Expression Handling
+
+Since `distinct()` relies on data masking, we can replace the broken-down approach with expression parsing.  @sec-expression-parser introduced a method for safe expression handling.  This method can be applied to `distinct()`.
+
+```{r}
+allowed_operators <- c("+", "-", "*", "/", "^", 
+                       ">", ">=", "<", "<=", "==", "!=", 
+                       "&&", "||", "!", "c", "mean", "sd",
+                       "&", "|")
+                       
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+build_distinct_expr <- function(x) {
+  expr <- rlang::parse_expr(x)
+  validate_expr(expr)
+  expr
+}
+```
+
+Here's a simple example to illustrate returning unique rows using an expression
+
+```json
+{
+  "step": "distinct",
+  "parameters": {
+    "expression": "gear + carb"
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="distinct", parameters=list(expression="gear + carb")), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::distinct(mtcars, !!build_distinct_expr(inp$parameters$expression))
+```
 
 ## Renaming Columns
 
@@ -687,4 +765,82 @@ is equivalent to writing
 ```{r}
 #| eval: false
 dplyr::arrange(mtcars, gear, dplyr::desc(cyl), mpg)
+```
+
+### Expression Handling
+
+Since `arrange()` relies on data masking, like `distinct()`, we can replace the broken-down approach with expression parsing.  The same safe expression handling code from @sec-expression-parser can be applied to `arrange()`.
+
+```{r}
+allowed_operators <- c("desc")
+
+validate_expr <- function(expr) {
+  
+  # Atomic values (numbers, strings, logicals) are always safe
+  if (rlang::is_atomic(expr)) {
+    return(TRUE)
+  }
+
+  # Symbols (variables and column names) are safe
+  if (rlang::is_symbol(expr)) {
+    return(TRUE)
+  }
+
+  # Check function calls
+  if (rlang::is_call(expr)) {
+    fn <- rlang::call_name(expr)
+
+    # Parentheses are grouping operators, not function calls
+    if (fn == "(") {
+      validate_expr(expr[[2]])
+      return(TRUE)
+    }
+
+    # Reject disallowed operators
+    if (!fn %in% allowed_operators) {
+      stop("Disqualified operator: ", fn, call. = FALSE)
+    }
+
+    # Recursively validate arguments
+    for (i in 2:length(expr)) {
+      validate_expr(expr[[i]])
+    }
+
+    return(TRUE)
+  }
+
+  # Anything else is rejected
+  stop("Unsupported expression type", call. = FALSE)
+}
+
+build_arrange_expr <- function(x) {
+  lapply(x, function(y) {
+    if (startsWith(y, "desc")) y <- paste0("dplyr::", y)
+    expr <- rlang::parse_expr(y)
+    validate_expr(expr)
+    expr
+  })
+}
+```
+
+Here's an example to illustrate sorting using an expression with a mixture of ascending and descending orders.
+
+```json
+{
+  "step": "arrange",
+  "parameters": {
+    "vars": ["gear", "desc(cyl)", "mpg"]
+  }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(step="arrange", parameters=list(vars=list("gear", "desc(cyl)", "mpg"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+dplyr::arrange(mtcars, !!!build_arrange_expr(inp$parameters$vars))
 ```

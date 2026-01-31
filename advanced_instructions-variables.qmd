@@ -505,11 +505,6 @@ safe_env <- rlang::new_environment(
   )
 )
 
-safe_eval <- function(expr) {
-  validate_var_expr(expr)
-  eval(expr, envir = safe_env)
-}
-
 # Wrapper function for parsing and evaluation
 eval_safe_expr <- function(
   expr_input,

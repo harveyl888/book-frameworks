@@ -344,7 +344,7 @@ After substituting variables, the next steps are:
 
 This approach has been discussed in detail in @sec-expression-handling.  The functions outlined in this chapter, along with the wrapper function for safe expression handling presented in @sec-validate-function can be used to evaluate variable expressions.
 
-### A function to run it all
+### A Function to Run It All
 
 Now we have all the components, we just need a function to run variable substitution followed by validation and evaluation.  Here we extend the `substitute_vars()` function to include the additional steps in a simple helper function.
 
@@ -398,8 +398,8 @@ Our final, complete code is below.  It consists of:
 # Any other operator or function will throw an error during validation
 allowed_operators <- c("+", "-", "*", "/", "^", 
                        ">", ">=", "<", "<=", "==", "!=", 
-                       "&&", "||", "!", "c", "mean", "sd",
-                       "&", "|")
+                       "&", "|", "&&", "||", "!",
+                       "c", "mean", "sd")
 
 # Function to validate scalar expression                       
 validate_var_expr <- function(expr) {
@@ -478,31 +478,29 @@ validate_expr <- function(expr) {
 }
 
 # Build a safe environment to evaluate scalar expressions
-safe_env <- rlang::new_environment(
-  data = list(
-    `+`  = `+`,
-    `-`  = `-`,
-    `*`  = `*`,
-    `/`  = `/`,
-    `^`  = `^`,
-    `>`  = `>`,
-    `<`  = `<`,
-    `>=` = `>=`,
-    `<=` = `<=`,
-    `==` = `==`,
-    `!=` = `!=`,
-    `&`  = `&`,
-    `|`  = `|`,
-    `&&` = `&&`,
-    `||` = `||`,
-    `!`  = `!`,
-    `(` = `(`,
-    c = c,
-    mean = mean,
-    sd = sd,
-    `&` = `&`,
-    `|` = `|`
-  )
+safe_env <- new.env(parent = emptyenv())
+rlang::env_bind(
+  safe_env,
+  `+`  = `+`,
+  `-`  = `-`,
+  `*`  = `*`,
+  `/`  = `/`,
+  `^`  = `^`,
+  `>`  = `>`,
+  `<`  = `<`,
+  `>=` = `>=`,
+  `<=` = `<=`,
+  `==` = `==`,
+  `!=` = `!=`,
+  `&`  = `&`,
+  `|`  = `|`,
+  `&&` = `&&`,
+  `||` = `||`,
+  `!`  = `!`,
+  `(` = `(`,
+  c = c,
+  mean = mean,
+  sd = sd
 )
 
 # Wrapper function for parsing and evaluation

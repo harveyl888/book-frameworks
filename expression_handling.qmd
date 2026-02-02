@@ -331,8 +331,8 @@ Let's start by setting a set of allowed operators and functions.  When we valida
 ```{r}
 allowed_operators <- c("+", "-", "*", "/", "^", 
                        ">", ">=", "<", "<=", "==", "!=", 
-                       "&&", "||", "!", "c", "mean", "sd",
-                       "&", "|")
+                       "&", "|", "&&", "||", "!",
+                       "c", "mean", "sd")
 ```
 
 To validate the AST we'll build a function that returns `TRUE` if the AST is valid and stops if it is not.  A more sophisticated approach would return an error and allow the logic in the engine to determine what to do.
@@ -526,8 +526,8 @@ The same set of allowed operators and functions are used:
 ```{r}
 allowed_operators <- c("+", "-", "*", "/", "^", 
                        ">", ">=", "<", "<=", "==", "!=", 
-                       "&&", "||", "!", "c", "mean", "sd",
-                       "&", "|")
+                       "&", "|", "&&", "||", "!",
+                       "c", "mean", "sd")
 ```
 
 To validate the AST we'll build a new function, `validate_var_expr()`, that returns `TRUE` if the AST is valid and stops if it is not.  
@@ -572,7 +572,7 @@ The `validate_var_expr()` function walks through the parsed expression (AST) and
 
 #### Step 3. Safely Evaluating the Expression
 
-Now our expression contains only operators from the `allowed_operators` list we can go ahead an evaluate it.  A simple function combines validation and evaluation as follows:
+Now our expression contains only operators from the `allowed_operators` list we evaluate it.  A simple helper function combines validation and evaluation as follows:
 
 ```{r}
 safe_eval <- function(expr) {
@@ -585,7 +585,7 @@ safe_eval <- function(expr) {
 safe_eval(rlang::parse_expr('1 + 2'))
 ```
 
-By default, `eval()` evaluates within the environment in which it was called.  Even if our AST contains just operators listed in `allowed_calls`, R still has to look up these symbols when evaluating an expression.  By default `+` points to the addition operator one of the beautiful things about R is that `+` can be redefined, for example to `-`.
+By default, `eval()` evaluates within the environment in which it was called.  Even if our AST contains just operators listed in `allowed_calls`, R still has to look up these symbols when evaluating an expression.  This means that symbol lookup is affected by the current environment, and even core operators such as `+` can be rebound:
 
 ```{r}
 ## define an expression for evaluation
@@ -603,17 +603,20 @@ eval(my_expr)
 `+` <- add_operator_default
 ```
 
-Wow!  We've just redefined how basic mathematics works in R.  To make things more secure, we could use an environment just for evaluation.  Our safe environment will contain only the functions from our allowed operator list.
+Wow!  We've just redefined how basic mathematics works in R.
+
+To prevent user expressions from being affected by rebinding in the calling environment, we can evaluate them in a dedicated, safe environment:
 
 ```{r}
 ## build a safe environment for evaluation
-safe_env <- rlang::new_environment(
-  data = list(
-    `+`  = `+`,
-    `-`  = `-`,
-    `*`  = `*`,
-    `/`  = `/`
-  )
+safe_env <- new.env(parent = emptyenv())
+
+rlang::env_bind(
+  safe_env,
+  `+`  = `+`,
+  `-`  = `-`,
+  `*`  = `*`,
+  `/`  = `/`
 )
 
 ## store default `+` behavior
@@ -633,7 +636,13 @@ eval(my_expr, envir = safe_env)
 `+` <- add_operator_default
 ```
 
-when we evaluate using `eval()` we supply `safe_env` which contains only mappings for our functions and operators.  We can confirm that functions not listed in our environment are blocked.
+Here we have create a new environment, `safe_env`, which is built on the empty environment.  The empty environment contains no operators or functions, not even primitive operators such as `+` or `*`.  `rlang::env_bind()` allows us to create bindings, essentially defining functions and operators for our environment.  We have used `rlang::env_bind()` to add basic mathematical functions to `safe_env`.  Now when we rebind `+` it does not have an effect on evaluating our expression since it is evaluated in `safe_env`.
+
+The beauty of this approach is that we have full control over what is permitted in our environment.
+
+When we evaluate using `eval()` we supply `safe_env` which contains only mappings for our functions and operators.  We can confirm that functions not listed in our environment are blocked.
+
+The following code will fail since both `c()` and `mean()` are missing from our safe environment.
 
 ```{r}
 #| error: true
@@ -647,34 +656,32 @@ eval(my_expr)
 eval(my_expr, envir = safe_env)
 ```
 
-Our updated safe evaluation becomes:
+After updating our environment `mean(c(1, 2, 3))` can be evaluated.
 
 ```{r}
-safe_env <- rlang::new_environment(
-  data = list(
-    `+`  = `+`,
-    `-`  = `-`,
-    `*`  = `*`,
-    `/`  = `/`,
-    `^`  = `^`,
-    `>`  = `>`,
-    `<`  = `<`,
-    `>=` = `>=`,
-    `<=` = `<=`,
-    `==` = `==`,
-    `!=` = `!=`,
-    `&`  = `&`,
-    `|`  = `|`,
-    `&&` = `&&`,
-    `||` = `||`,
-    `!`  = `!`,
-    `(` = `(`,
-    c = c,
-    mean = mean,
-    sd = sd,
-    `&` = `&`,
-    `|` = `|`
-  )
+safe_env <- new.env(parent = emptyenv())
+rlang::env_bind(
+  safe_env,
+  `+`  = `+`,
+  `-`  = `-`,
+  `*`  = `*`,
+  `/`  = `/`,
+  `^`  = `^`,
+  `>`  = `>`,
+  `<`  = `<`,
+  `>=` = `>=`,
+  `<=` = `<=`,
+  `==` = `==`,
+  `!=` = `!=`,
+  `&`  = `&`,
+  `|`  = `|`,
+  `&&` = `&&`,
+  `||` = `||`,
+  `!`  = `!`,
+  `(` = `(`,
+  c = c,
+  mean = mean,
+  sd = sd
 )
 
 safe_eval <- function(expr) {

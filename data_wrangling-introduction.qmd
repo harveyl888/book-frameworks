@@ -1,4 +1,4 @@
-# Introduction
+# Introduction {#sec-data-wrangling-intro}
 
 @sec-importing-data introduced importing data.  Once data are imported, one or more data wrangling steps are often required to manipulate data into its required form and format.  This section illustrates how data wrangling can be performed using an instruction set built on the {dplyr} and {tidyr} libraries.  Of course, other approaches, such as using base R functions and {data.table} may also be applied and the concepts presented here will hold true.
 

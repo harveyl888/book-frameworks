@@ -1,0 +1,32 @@
+# Introduction
+
+Previous chapters have introduced data import and wrangling based on an instruction set.  We can extend this approach to visualizations.  In the following chapters we will explore how to define and generate visualizations using a similar approach.  Visualizations will be based on static (ggplot2) and interactive (plotly) libraries, each approach starting with a preprocessed dataset.
+
+## Standardizing the Schema
+
+A visualization parser benefits from a standard, flexible schema for defining visualizations.  As a JSON representation the following is one example of this approach:
+
+```json
+{
+    "type": "chart",
+    "mode": "bar",
+    "parameters": {...}
+}
+```
+
+The schema is similar to that used in data wrangling, specifying the type of chart required (`mode`) and following with `parameters` which holds the specific settings for that visualization.  Using a `type` argument allows for more outputs through the same approach.  For example, `type` can refer to `chart` or `table`.  This structure is highly extensible, allowing for the addition of new visualization types and parameters as needed.
+
+Use of a *mapping* field within *parameters* allows for clear specification of how data variables map to visual properties.  These mappings are chart-specific and the parser will process them accordingly.  For example, a bar chart may require `x` an `y` mappings, while a heatmap may require `x`, `y` and `z`.
+
+```json
+{
+    "type": "chart",
+    "mode": "bar",
+    "parameters": {
+        "mapping": {
+            "x": "category",
+            "y": "value",
+        }
+    }
+}
+```

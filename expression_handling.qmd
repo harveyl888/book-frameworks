@@ -144,7 +144,7 @@ dplyr::mutate(mtcars, new_col = "miles_per_gallon")
 Data masking is closely related to non-standard evaluation but is conceptually different.  Non-standard evaluation describes *when* expressions are captured and evaluated, whereas data masking describes *where* names are resolved when the evaluation occurs.
 :::
 
-### Pronouns: `.data` and `.env`
+### Pronouns: `.data` and `.env` {#sec-expressions-pronouns}
 
 When using data masking sometimes you need to determine if a name should be looked up in the data or in the environment.  The `.data` and `.env` pronouns provide explicit control.
 

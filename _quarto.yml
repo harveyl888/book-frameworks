@@ -25,6 +25,11 @@ book:
       - data_wrangling-transformation.qmd
       - data_wrangling-reshaping.qmd
       - data_wrangling-joins.qmd
+    - part: "Visualizations"
+      chapters:
+      - visualizations_introduction.qmd
+      - visualizations_generic.qmd
+      - visualizations_standard_charts.qmd
     - part: "Advanced Instructions"
       chapters:
       - advanced_instructions-introduction.qmd

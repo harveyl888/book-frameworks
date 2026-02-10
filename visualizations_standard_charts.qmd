@@ -1,0 +1,386 @@
+# Standard Charts and Automatic Chart Type Inference
+
+This chapter will introduce parameterization for some common charts using ggplot2 geoms.  The previous chapter (@sec-visualizations-generic) introduced an extensible, generic approach to building charts with ggplot2.  This chapter will show how that approach can be applied to a variety of standard chart types, extending the approach to automatically choose the chart type based on the type of data.
+
+## Dataset
+
+In all the plots below we'll use a standard dataset, `data`, based on the `mtcars` dataset.  The `cyl` and `gear` columns have been converted to factors to better show some of the charts.
+
+```{r}
+data <- mtcars |>
+    dplyr::mutate(cyl = factor(cyl), gear = factor(gear))
+```
+
+## Functions
+
+We will use the functions defined in @sec-visualizations-generic to build the charts in this chapter.  The `build_plot()` function takes a list of datasets and a JSON instruction set, and builds a ggplot2 chart based on the instructions.  The `build_layer()` function takes a layer instruction and builds a ggplot2 layer based on the instructions.  The functions used are shown below for reference.
+
+```{r}
+build_plot <- function(data, params) {
+    
+    if (length(data) == 1) {
+        global_data <- data[[1]]
+    } else if ("main" %in% names(data)) {
+        global_data <- data[["main"]]
+    } else {
+        stop("Data should a list of length 1 or a named list with a 'main' dataset")
+    }
+
+    g <- ggplot2::ggplot(data = global_data)
+    layers <- purrr::map(params$layers, build_layer, data)
+
+    for (layer in layers) {
+        g <- g + rlang::eval_tidy(layer)
+    }
+
+    g
+}
+```
+
+```{r}
+build_layer <- function(layer, data = NULL) {
+
+    geom <- geoms[[layer$type]]
+    if (is.null(geom)) stop("Unknown chart type ", layer$type)
+
+    ## bare geom call
+    rtn <- rlang::call2(geom$geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## data override
+    ## if data included then override the global data and add it to the geom layer
+    if (!is.null(layer$data) && layer$data %in% names(data)) {
+        rtn[["data"]] <- data[[layer$data]]
+    }
+
+    ## Default parameters
+    for (x in names(geom$default_params)) {
+        rtn[[x]] <- geom$default_params[[x]]
+    }
+
+    ## add parameters
+    for (x in names(layer$parameters)) {
+        rtn[[x]] <- layer$parameters[[x]]
+    }
+
+    rtn
+
+}
+```
+
+```{r}
+geoms <- list(
+    scatter = list(
+        geom = ggplot2::geom_point,
+        default_params = list()
+    ),
+    bar = list(
+        geom = ggplot2::geom_bar,
+        default_params = list()
+    ),
+    boxplot = list(
+        geom = ggplot2::geom_boxplot,
+        default_params = list()
+    )
+)
+```
+
+## Barchart
+
+ggplot2 has two types of barchart `geom_bar()` plots the height of the bar according to the number of cases in each group, whereas `geom_col()` plots based on values in the data, leaving the data as is.  The aesthetics of the barchart can be controlled through several parameters.
+
+### Simple Bar Chart
+
+The simplest form is to just import a column identifier for `x` and call `geom_bar()`.  The JSON instruction set looks like:
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "x": "cyl"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="bar", mapping=list(x="cyl")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```
+
+### Horizontal Bar Chart
+
+The barchart can be made horizontal by mapping the categorical variable to the `y` aesthetic instead of `x`.
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "y": "cyl"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="bar", mapping=list(y="cyl")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```
+
+### Stacked Bar Chart
+
+Stacked barcharts can be created by mapping a second categorical variable to the `fill` aesthetic.
+
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "x": "cyl",
+                "fill": "gear"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="bar", mapping=list(x="cyl", fill="gear")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```
+
+## Automatically Choosing the Chart Type
+
+The previous sections showed how to build specific chart types with the generic approach.  However, we can also automatically assign the chart type based on the types of variables in the mapping.  For example, if the `x` variable is categorical and the `y` variable is numeric, then a bar chart would be appropriate.  If both `x` and `y` are numeric, then a scatter chart would be appropriate.  If `x` is categorical and `y` is numeric, then a boxplot would be appropriate.  To achieve this, we can add some logic to the `build_layer()` function to automatically choose the chart type based on the types of the variables in the mapping.  This logic can be as simple or as complex as needed, but for this example we'll just use a simple set of rules based on the types of the `x` and `y` variables.
+
+To automatically assign the chart type in `build_layer()` we have to change the flow,, as the data step needs to be evaluated before the geom can be determined.  The logic is as follows:
+
+1. Resolve the dataset (global or layer-specific)
+2. Determine the variables in the mapping and inspect their types
+3. Infer the chart type
+4. Build the geom call, adding additional parameters as needed
+
+`build_layer()` is updated to reflect this new flow, as shown below.
+
+```{r}
+build_layer <- function(layer, data = NULL) {
+
+    ## identify dataset for this later
+    if (!is.null(layer$data) && layer$data %in% names(data)) {
+        layer_data <- data[[layer$data]]
+    } else {
+        layer_data <- data[["main"]]
+    }
+
+    ## automatically assign geom type if not specified
+    if (is.null(layer$type) || layer$type == "auto") {
+        infer_rtn <- infer_layer_type(layer$mapping, layer_data)
+        layer$type <- infer_rtn$type
+        layer$mapping <- infer_rtn$mapping
+    }
+
+    geom <- geoms[[layer$type]]
+    if (is.null(geom)) stop("Unknown chart type ", layer$type)
+
+    ## bare geom call
+    rtn <- rlang::call2(geom$geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## data override
+    ## if data included then override the global data and add it to the geom layer
+    if (!is.null(layer$data)) {
+      rtn[["data"]] <- layer_data
+    }
+
+    ## Default parameters
+    for (x in names(geom$default_params)) {
+        rtn[[x]] <- geom$default_params[[x]]
+    }
+
+    ## add parameters
+    for (x in names(layer$parameters)) {
+        rtn[[x]] <- layer$parameters[[x]]
+    }
+
+    rtn
+
+}
+```
+
+A new function, `infer_layer_type()`, is added to determine the chart type based on the types of variables in the mapping.  The function takes the mapping and dataset as input and returns the inferred chart type.  The logic in this example is fairly simple but it can be extended to include more complex rules and additional chart types as needed.
+
+`infer_layer_type()` returns both the geom and any updated mapping.  Returning the geom alone is not sufficient as some chart types require updated mappings.  For example, a stacked bar chart is often used when plotting two categorical variables.  This requires `x` and `fill` aesthetics, but the input mapping may only specify `x` and `y`.
+
+```{r}
+infer_layer_type <- function(mapping, data) {
+    x <- data[[mapping$x]]
+    y <- data[[mapping$y]]
+
+    x_is_cat <- is.factor(x) || is.character(x)
+    y_is_cat <- is.factor(y) || is.character(y)
+
+    x_is_num <- is.numeric(x)
+    y_is_num <- is.numeric(y)
+
+    if (x_is_cat && y_is_cat) {
+        mapping$fill <- mapping$y
+        mapping$y <- NULL
+        type <- "bar"
+    } else if (x_is_num && y_is_num) {
+        type <- "scatter"
+    } else if (x_is_cat && y_is_num) {
+        type <- "boxplot"
+    } else {
+        stop(
+            "Cannot infer chart type for mapping: ",
+            mapping$x, " (", class(x), ") and ",
+            mapping$y, " (", class(y), ")"
+        )
+    }
+
+    list(type = type, mapping = mapping)
+}
+```
+
+We also have to add one line to `build_plot()`.  Now we may specifically use `data[["main"]]` inside `build_layer()` to refer to the global dataset.  Therefore we need to ensure that `data[["main"]]` is available.  `build_plot()` has an edge case where the input data is an unnamed list of length 1.  The update below addresses this edge case.
+
+```{r}
+build_plot <- function(data, params) {
+    
+    if (length(data) == 1) {
+        global_data <- data[[1]]
+        data[["main"]] <- global_data
+    } else if ("main" %in% names(data)) {
+        global_data <- data[["main"]]
+    } else {
+        stop("Data should a list of length 1 or a named list with a 'main' dataset")
+    }
+
+    g <- ggplot2::ggplot(data = global_data)
+    layers <- purrr::map(params$layers, build_layer, data)
+
+    for (layer in layers) {
+        g <- g + rlang::eval_tidy(layer)
+    }
+
+    g
+}
+```
+
+Some examples follow
+
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "mapping": {
+                "x": "cyl",
+                "y": "gear"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(mapping=list(x="cyl", y="gear")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "mapping": {
+                "x": "wt",
+                "y": "mpg"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(mapping=list(x="wt", y="mpg")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```
+
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "mapping": {
+                "x": "cyl",
+                "y": "mpg"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(mapping=list(x="cyl", y="mpg")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(data), inp)
+```

@@ -1,0 +1,577 @@
+# A Generic Approach to Visualizations {#sec-visualizations-generic}
+
+In this chapter we'll discuss a generic approach to static chart building with ggplot2.  Starting with a specific approach, demonstrating with a scatter chart, we'll move on to how this can be built as a generic approach, applicable to any ggplot2 chart with geoms.
+
+## Building Specific Charts
+
+We'll start with building a basic scatter chart from an instruction set.
+
+The simplest form is to just import a column identifiers for `x` and `y`, and call `geom_point()`.  Assuming our parameters are available in variables `x` and `y` and `data` contains a data frame to be plotted, a scatter chart can be drawn as follows:
+
+```{r}
+data <- mtcars
+x <- "mpg"
+y <- "wt"
+
+x_plt <- rlang::sym(x)
+y_plt <- rlang::sym(y)
+
+ggplot2::ggplot(data = data, ggplot2::aes(x = !!x_plt, y = !!y_plt)) + 
+    ggplot2::geom_point()
+
+```
+
+This approach converts the `x` and `y` string parameters to symbols and uses injection inside the `ggplot()` function.
+
+An alternative approach is to use the `.data` pronoun (as discussed in @sec-expressions-pronouns).
+
+```{r}
+data <- mtcars
+x <- "mpg"
+y <- "wt"
+
+ggplot2::ggplot(data = data, ggplot2::aes(x = .data[[x]], y = .data[[y]])) + 
+    ggplot2::geom_point()
+
+```
+
+The pronoun approach is preferred in this instance as it is a little more concise than using symbols and works cleanly with strings.
+
+This approach can be applied to the instruction set.  A JSON input file looks like:
+
+```json
+{
+    "type": "chart",
+    "mode": "scatter",
+    "parameters": {
+        "mapping": {
+            "x": "mpg",
+            "y": "wt"
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", mode="scatter", parameters=list(mapping=list(x="mpg", y="wt"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+and the engine could be:
+
+```{r}
+chart_scatter <- function(data, parameters) {
+    p <- parameters$mapping
+    ggplot2::ggplot(data = data, ggplot2::aes(x = .data[[p$x]], y = .data[[p$y]])) +
+        ggplot2::geom_point()
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+chart_scatter(mtcars, inp$parameters)
+```
+
+ggplot2 plots support two types of aesthetics: **mapped** aesthetics, where a visual property is driven by the data, and **set** aesthetics, where a property is fixed to a constant value.  Color, for example, can be **mapped** to the value of `disp` as shown below
+
+```json
+{
+    "type": "chart",
+    "mode": "scatter",
+    "parameters": {
+        "mapping": {
+            "x": "mpg",
+            "y": "wt",
+            "color": "disp"
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", mode="scatter", parameters=list(mapping=list(x="mpg", y="wt", color="disp"))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+chart_scatter <- function(data, parameters) {
+    p <- parameters$mapping
+    ggplot2::ggplot(data = data, ggplot2::aes(x = .data[[p$x]], y = .data[[p$y]], color = .data[[p$color]])) +
+        ggplot2::geom_point()
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+chart_scatter(mtcars, inp$parameters)
+```
+
+or set to the value `2`
+
+```json
+{
+    "type": "chart",
+    "mode": "scatter",
+    "parameters": {
+        "mapping": {
+            "x": "mpg",
+            "y": "wt"
+        },
+        "set": {
+            "color": 2
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", mode="scatter", parameters=list(mapping=list(x="mpg", y="wt"), set=list(color=2))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+chart_scatter <- function(data, parameters) {
+    p <- parameters$mapping
+    s <- parameters$set
+    ggplot2::ggplot(data = data, ggplot2::aes(x = .data[[p$x]], y = .data[[p$y]])) +
+        ggplot2::geom_point(color = s$color)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+chart_scatter(mtcars, inp$parameters)
+```
+
+The `ggplot()` function accepts `data` and `mapping` arguments.  The `geom_` layers can use both **mapped** and **set** aesthetics.  Mapped values in `aes()` are inherited by the layers, unless specifically overwritten.  Set values passed to the geom layer are not inherited by other layers.
+
+The approach used for the scatter chart can be adapted to build other charts.  For example a bar chart:
+
+```json
+{
+    "type": "chart",
+    "mode": "bar",
+    "parameters": {
+        "mapping": {
+            "x": "cyl"
+        },
+        "set": {
+            "fill": 2
+        }
+    }
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", mode="bar", parameters=list(mapping=list(x="cyl"), set=list(fill=2))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+chart_bar <- function(data, parameters) {
+    p <- parameters$mapping
+    s <- parameters$set
+    ggplot2::ggplot(data = data, ggplot2::aes(x = .data[[p$x]])) +
+        ggplot2::geom_bar(fill = s$fill)
+}
+
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+chart_bar(mtcars, inp$parameters)
+```
+
+We can use a couple of the properties of ggplot to build a generic function capable of returning any chart.
+
+  - ggplot2 geoms take the same concept of arguments (`data`, `mapping` and *other parameters*).
+  - ggplot2 charts can be built up step-wise, layer by layer.
+
+The next section will show how we can move beyond specific charts to a generic chart builder.
+
+## A Generic Chart Builder
+
+A generic ggplot chart builder should consider the following:
+
+-  Properties can be inherited.  Properties defined in the global (`ggplot()`) function are inherited by graphical layers, unless specifically overwritten.  This holds true for `data` and `mapping`.
+-  Properties passed to geom layers should distinguish between **mapped** and **not mapped**.
+-  ggplot layers can be built up stepwise.  A chart can have multiple layers using the same or different data.
+
+We'll start with a schema as follows:
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "x": "cyl"
+            },
+            "parameters": {
+                "fill": "darkgreen"
+             }
+        }
+    ]
+}
+```
+
+This schema is slightly different to the ones above in that we can specify a list of `layers` each with `mapping` and `parameter` values.
+
+Our generic plot builder will start with a simple concept.  The `build_plot()` function can take two arguments: `data`, a rectangular data frame, possibly pre-processed through the data wrangling approaches described in @sec-data-wrangling-intro, and `params`, a list of parameters describing the geom layers.  We build a ggplot and simply add layers
+
+```{r}
+build_plot <- function(data, params) {
+    
+    g <- ggplot2::ggplot(data = data)
+    layers <- purrr::map(params$layers, build_layer)
+
+    for (layer in layers) {
+        g <- g + rlang::eval_tidy(layer)
+    }
+
+    g
+}
+```
+
+The layer is wrapped in `rlang::eval_tidy()` to evaluate it in a data mask.  This means that we can use pronouns (`.data`) to specify column names in the data.
+
+The layers are defined using the following approach
+
+```{r}
+build_layer <- function(layer) {
+
+    if (layer$type == "scatter") {
+        geom <- ggplot2::geom_point
+    } else if (layer$type == "bar") {
+        geom <- ggplot2::geom_bar
+    } else {
+        stop("Unknown chart type ", layer$type)
+    }
+
+    ## bare geom call
+    rtn <- rlang::call2(geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## add parameters that are not mapped
+        for (x in names(layer$parameters)) {
+            rtn[[x]] <- layer$parameters[[x]]
+        }
+
+        rtn
+
+}
+```
+
+`build_layer()` builds and returns a single layer.  The function starts by identifying the geom and building an empty call using `rlang::call2()`.  It then adds mapping (`rlang::call2()` to `ggplot2::aes()`) and any additional parameters (passed as key-value pairs) to the geom layer before returning it.
+
+::: {.callout-important}
+### Understanding `rlang::expr(.data[[!!x]])`
+
+`rlang::expr(.data[[!!x]])` is an important construct that allows us to build an expression of mappings.  `.data[[...]]` is a tidy-eval pronoun which tells ggplot to look up the name in the data frame at evaluation.  `!!x` injects the string (`x`) representation of a column name.  If `x` is "cyl" then `rlang::expr(.data[[!!x]])` becomes `.data[["cyl"]]`.
+:::
+
+Taking the example above:
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "x": "cyl"
+            },
+            "parameters": {
+                "fill": "darkgreen"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="bar", mapping=list(x="cyl"), parameters=list(fill="darkgreen")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+Running `build_plot()` returns the following:
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(mtcars, inp)
+```
+
+### Adding `geom` Dispatcher
+
+The concept can be extended further by including a dispatcher.  A dispatcher identifies which geom to use and returns it.
+
+```{r}
+geoms <- list(
+    scatter = ggplot2::geom_point,
+    bar = ggplot2::geom_bar
+)
+```
+
+We can now simplify the top of `build_layer()`, removing the conditional logic used to select the geom.
+
+```{r}
+build_layer <- function(layer) {
+
+    geom <- geoms[[layer$type]]
+    if (is.null(geom)) stop("Unknown chart type ", layer$type)
+
+    ## bare geom call
+    rtn <- rlang::call2(geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## add parameters
+    for (x in names(layer$parameters)) {
+        rtn[[x]] <- layer$parameters[[x]]
+    }
+
+    rtn
+
+}
+```
+
+### Default Parameters
+
+With a slight modification to `geoms` and `build_layer()` the dispatcher can also set default options.  `build_layer()` takes the default parameters and simply adds them to the layer before any user-defined parameters are included.
+
+```{r}
+geoms <- list(
+    scatter = list(
+        geom = ggplot2::geom_point,
+        default_params = list()
+    ),
+    bar = list(
+        geom = ggplot2::geom_bar,
+        default_params = list(width = 0.5)
+    )
+)
+```
+
+```{r}
+build_layer <- function(layer) {
+
+    geom <- geoms[[layer$type]]
+    if (is.null(geom)) stop("Unknown chart type ", layer$type)
+
+    ## bare geom call
+    rtn <- rlang::call2(geom$geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## Default parameters
+    for (x in names(geom$default_params)) {
+        rtn[[x]] <- geom$default_params[[x]]
+    }
+
+    ## add parameters
+    for (x in names(layer$parameters)) {
+        rtn[[x]] <- layer$parameters[[x]]
+    }
+
+    rtn
+
+}
+```
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "bar",
+            "mapping": {
+                "x": "cyl"
+            },
+            "parameters": {
+                "fill": "darkgreen"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="bar", mapping=list(x="cyl"), parameters=list(fill="darkgreen")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(mtcars, inp)
+```
+
+### Adding Additional Datasets
+
+`build_plot()` is our orchestration function.  It builds the global ggplot object and adds layers to it, each layer built by `build_layer()`.  To work with multiple datasets we need to change the way `build_plot()` works, passing a named list of datasets instead of a single data frame.  Each layer can then be built using the global or a specfic dataset.
+
+```{r}
+build_plot <- function(data, params) {
+    
+    if (length(data) == 1) {
+        global_data <- data[[1]]
+    } else if ("main" %in% names(data)) {
+        global_data <- data[["main"]]
+    } else {
+        stop("Data should a list of length 1 or a named list with a 'main' dataset")
+    }
+
+    g <- ggplot2::ggplot(data = global_data)
+    layers <- purrr::map(params$layers, build_layer, data)
+
+    for (layer in layers) {
+        g <- g + rlang::eval_tidy(layer)
+    }
+
+    g
+}
+```
+
+`build_layer()` can now take an additional argument `data`, which is a named list of datasets.  A layer may optionally specify a dataset to use, which overrides the global dataset for that layer only.  If no dataset is specified then the global dataset will be used.
+
+```{r}
+build_layer <- function(layer, data = NULL) {
+
+    geom <- geoms[[layer$type]]
+    if (is.null(geom)) stop("Unknown chart type ", layer$type)
+
+    ## bare geom call
+    rtn <- rlang::call2(geom$geom)
+
+    ## add mapping
+    if (!is.null(layer$mapping)) {
+        mapping_exprs <- purrr::map(layer$mapping, \(x) rlang::expr(.data[[!!x]]))
+        rtn[["mapping"]] <- rlang::call2(ggplot2::aes, !!!mapping_exprs)
+    }
+
+    ## data override
+    ## if data included then override the global data and add it to the geom layer
+    if (!is.null(layer$data) && layer$data %in% names(data)) {
+        rtn[["data"]] <- data[[layer$data]]
+    }
+
+    ## Default parameters
+    for (x in names(geom$default_params)) {
+        rtn[[x]] <- geom$default_params[[x]]
+    }
+
+    ## add parameters
+    for (x in names(layer$parameters)) {
+        rtn[[x]] <- layer$parameters[[x]]
+    }
+
+    rtn
+
+}
+```
+
+Here's an example of how this works in practice.  Let's built a plot with two layers, each scatter charts, but using different datasets.  The first layer uses the global dataset (`main`) which is simply `mtcars`.  The second layer uses a dataset called `data_set_2` which is a subset of `mtcars` where `gear == 3`.  The second layer will be plotted on top of the first layer, highlighting the points where `gear == 3` in red on top of the full dataset plotted in grey.  To achieve this we pass a named list of datasets to `build_plot()`, with `main` as the global dataset and `data_set_2` as the second dataset.  In the instruction set, layer 1 does not specify a dataset, so it uses the global dataset (`main`), while layer 2 specifies `data_set_2` as its dataset.  Because layer 2 uses a different dataset, its aesthetic mappings must be specified explicitly, even though they mirror those of layer 1.
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "scatter",
+            "mapping": {
+                "x": "wt",
+                "y": "mpg"
+            },
+            "parameters": {
+                "color": "darkgrey"
+            }
+        },
+        {
+            "type": "scatter",
+            "data": "data_set_2",
+            "mapping": {
+                "x": "wt",
+                "y": "mpg"
+            },
+            "parameters": {
+                "color": "red",
+                "size": 4,
+                "shape": 1
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="scatter", mapping=list(x="wt", y="mpg"), parameters=list(color="darkgrey")), list(type="scatter", data="data_set_2", mapping=list(x="wt", y="mpg"), parameters=list(color="red", size=4, shape=1)))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+df <- dplyr::filter(mtcars, gear == 3)
+data_list <- list(main = mtcars, data_set_2 = df)
+build_plot(data_list, inp)
+```
+
+### Extensibility
+
+This approach is highly extensible.  To add a new chart, simply add a new term to `geoms`.  For example
+
+```{r}
+geoms <- list(
+    scatter = list(
+        geom = ggplot2::geom_point,
+        default_params = list()
+    ),
+    bar = list(
+        geom = ggplot2::geom_bar,
+        default_params = list(width = 0.5)
+    ),
+    boxplot = list(
+        geom = ggplot2::geom_boxplot
+    )
+)
+```
+
+```json
+{
+    "type": "chart",
+    "layers": [
+        {
+            "type": "boxplot",
+            "mapping": {
+                "x": "cyl",
+                "group": "cyl",
+                "y": "mpg"
+            },
+            "parameters": {
+                "fill": "darkgreen"
+            }
+        }
+    ]
+}
+```
+
+```{r}
+#| echo: false
+#| eval: true
+jsonlite::write_json(list(type="chart", layers=list(list(type="boxplot", mapping=list(x="cyl", group="cyl", y="mpg"), parameters=list(fill="darkgreen")))), 'data/myfile.json', auto_unbox = TRUE)
+```
+
+```{r}
+inp <- jsonlite::fromJSON("data/myfile.json", simplifyVector = FALSE)
+build_plot(list(mtcars), inp)
+```
